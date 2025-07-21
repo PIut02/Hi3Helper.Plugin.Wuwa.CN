@@ -2,6 +2,7 @@
 using Hi3Helper.Plugin.Core.Management.Api;
 using Hi3Helper.Plugin.Core.Management.PresetConfig;
 using Hi3Helper.Plugin.Core.Utility.Windows;
+using Hi3Helper.Plugin.Wuwa.Management.Api;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -9,15 +10,18 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Hi3Helper.Plugin.Wuwa.Management
+namespace Hi3Helper.Plugin.Wuwa.Management.PresetConfig
 {
     internal class WuwaGlobalPresetConfig : PluginPresetConfigBase
     {
-        private const string ApiResponseUrl = "https://api-launcher-en.yo-star.com/";
+        private const string ApiResponseUrl = "https://prod-alicdn-gamestarter.kurogame.com/";
         private const string CurrentUninstKey = "";
-        private const string CurrentTag = "";
+        private const string CurrentTag = "G153";
+        private const string CurrentPatchHash = "VlNTU1c8DAEsKzslESUCDRIQAiomLA4WKBEMIAABOQgyMSEgVAA";
         private const string ExecutableName = "WutheringWaves.exe";
         private const string VendorName = "Kuro Games";
+
+        private static readonly List<string> _supportedLanguages = ["Japanese", "English"];
 
         public override string? GameName => "Wuthering Waves";
 
@@ -63,7 +67,11 @@ namespace Hi3Helper.Plugin.Wuwa.Management
 
         public override List<string> SupportedLanguages => [];
 
-        public override ILauncherApiMedia? LauncherApiMedia { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+        public override ILauncherApiMedia? LauncherApiMedia 
+        {
+            get => field ??= new WuwaGlobalLauncherApiMedia(ApiResponseUrl, CurrentTag, CurrentPatchHash, "news");
+            set;
+        }
         public override ILauncherApiNews? LauncherApiNews { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
         public override IGameManager? GameManager { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
         public override IGameInstaller? GameInstaller { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }

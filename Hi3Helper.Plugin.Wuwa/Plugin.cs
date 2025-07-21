@@ -2,8 +2,8 @@
 using Hi3Helper.Plugin.Core.Management.PresetConfig;
 using Hi3Helper.Plugin.Core.Update;
 using Hi3Helper.Plugin.Core.Utility;
-using Hi3Helper.Plugin.HBR.Management.PresetConfig;
-using Hi3Helper.Plugin.HBR.Utility;
+using Hi3Helper.Plugin.Wuwa.Management.PresetConfig;
+using Hi3Helper.Plugin.Wuwa.Utils;
 using System;
 using System.Runtime.InteropServices.Marshalling;
 
@@ -13,7 +13,7 @@ namespace Hi3Helper.Plugin.Wuwa;
 [GeneratedComClass]
 public partial class WuwaPlugin : PluginBase
 {
-    private static readonly IPluginPresetConfig[] PresetConfigInstances = [new HBRGlobalPresetConfig()];
+    private static readonly IPluginPresetConfig[] PresetConfigInstances = [new WuwaGlobalPresetConfig()];
     private static DateTime _pluginCreationDate = new(2025, 07, 20, 05, 06, 0, DateTimeKind.Utc);
     private static IPluginSelfUpdate? _selfUpdaterInstance;
 
@@ -40,11 +40,11 @@ public partial class WuwaPlugin : PluginBase
         presetConfig = PresetConfigInstances[index];
     }
 
-    public override void GetPluginSelfUpdater(out IPluginSelfUpdate selfUpdate) => selfUpdate = _selfUpdaterInstance ??= new HBRPluginSelfUpdate();
+    public override void GetPluginSelfUpdater(out IPluginSelfUpdate selfUpdate) => selfUpdate = _selfUpdaterInstance ??= new WuwaPluginSelfUpdate();
 
     private string? _getPluginAppIconUrl;
-    public override void GetPluginAppIconUrl(out string result) => result = _getPluginAppIconUrl ??= Convert.ToBase64String(HBRIconData.HBRAppIconData);
+    public override void GetPluginAppIconUrl(out string result) => result = _getPluginAppIconUrl ??= Convert.ToBase64String(WuwaIconData.WuwaAppIconData);
 
     private string? _getNotificationPosterUrl;
-    public override void GetNotificationPosterUrl(out string result) => result = _getNotificationPosterUrl ??= Convert.ToBase64String(HBRIconData.HBRAppPosterData);
+    public override void GetNotificationPosterUrl(out string result) => result = _getNotificationPosterUrl ??= Convert.ToBase64String(WuwaIconData.WuwaAppPosterData);
 }

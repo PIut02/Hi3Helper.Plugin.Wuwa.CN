@@ -4,11 +4,11 @@ using System;
 using System.Net.Http;
 using System.Runtime.InteropServices.Marshalling;
 
-namespace Hi3Helper.Plugin.HBR;
+namespace Hi3Helper.Plugin.Wuwa;
 
 [GeneratedComClass]
 // ReSharper disable once InconsistentNaming
-internal partial class HBRPluginSelfUpdate : PluginSelfUpdateBase
+internal partial class WuwaPluginSelfUpdate : PluginSelfUpdateBase
 {
     private const string ExCdnFileSuffix = "inhouse-plugin/wuwa/";
 
@@ -22,7 +22,7 @@ internal partial class HBRPluginSelfUpdate : PluginSelfUpdateBase
     protected override ReadOnlySpan<string> BaseCdnUrlSpan => BaseCdnUrl;
     protected override HttpClient UpdateHttpClient { get; }
 
-    internal HBRPluginSelfUpdate() => UpdateHttpClient = new PluginHttpClientBuilder()
+    internal WuwaPluginSelfUpdate() => UpdateHttpClient = new PluginHttpClientBuilder()
         .AllowRedirections()
         .AllowUntrustedCert()
         .AllowCookies()

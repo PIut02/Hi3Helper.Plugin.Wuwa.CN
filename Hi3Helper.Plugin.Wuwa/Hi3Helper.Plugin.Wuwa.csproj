@@ -10,7 +10,7 @@
 		<DebugType>embedded</DebugType>
 		<Deterministic>true</Deterministic>
 		<LangVersion>preview</LangVersion>
-		<AssemblyName>main</AssemblyName>
+		<AssemblyName>Seraphim</AssemblyName>
 		<ProductName>Wuthering Waves Plugin</ProductName>
 		<Product>Collapse</Product>
 		<Description>This library is a plugin for adding support for the game "Wuthering Waves" into Collapse Launcher</Description>
@@ -20,8 +20,8 @@
 		<Copyright>Copyright 2022-2025 $(Company)</Copyright>
 		<Version>0.1.0</Version>
 		<ApplicationIcon>icon.ico</ApplicationIcon>
-		<DefineConstants>USELIGHTWEIGHTJSONPARSER</DefineConstants>
-	</PropertyGroup>
+        <Configurations>Debug;Release;DebugNoReflection;ReleaseNoReflection</Configurations>
+    </PropertyGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\Hi3Helper.Plugin.Core\Hi3Helper.Plugin.Core.csproj" />
@@ -31,4 +31,13 @@
 		<PackageReference Include="System.IO.Hashing" Version="9.0.7" />
 	</ItemGroup>
 
+    <PropertyGroup Condition="'$(Configuration)'=='DebugNoReflection'">
+        <DefineConstants>$(DefineConstants);DEBUG;USELIGHTWEIGHTJSONPARSER</DefineConstants>
+        <Optimize>false</Optimize>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)'=='ReleaseNoReflection'">
+        <DefineConstants>$(DefineConstants);USELIGHTWEIGHTJSONPARSER</DefineConstants>
+        <Optimize>true</Optimize>
+    </PropertyGroup>
 </Project>

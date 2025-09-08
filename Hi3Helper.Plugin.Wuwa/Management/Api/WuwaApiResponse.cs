@@ -16,8 +16,8 @@ namespace Hi3Helper.Plugin.Wuwa.Management.Api;
 #if !USELIGHTWEIGHTJSONPARSER
 [JsonSerializable(typeof(WuwaApiResponse<WuwaApiResponseMedia>))]
 [JsonSerializable(typeof(WuwaApiResponse<WuwaApiResponseSocial>))]
-[JsonSerializable(typeof(WuwaApiResponse<WuwaApiResponseGameConfig>))]
-[JsonSerializable(typeof(WuwaApiResponse<WuwaApiResponseGameConfigRef>))]
+// [JsonSerializable(typeof(WuwaApiResponse<WuwaApiResponseGameConfig>))]
+// [JsonSerializable(typeof(WuwaApiResponse<WuwaApiResponseGameConfigRef>))]
 public partial class WuwaApiResponseContext : JsonSerializerContext;
 #endif
 

@@ -10,7 +10,7 @@
 		<DebugType>embedded</DebugType>
 		<Deterministic>true</Deterministic>
 		<LangVersion>preview</LangVersion>
-		<AssemblyName>Seraphim</AssemblyName>
+		<AssemblyName>Waves</AssemblyName>
 		<ProductName>Wuthering Waves Plugin</ProductName>
 		<Product>Collapse</Product>
 		<Description>This library is a plugin for adding support for the game "Wuthering Waves" into Collapse Launcher</Description>

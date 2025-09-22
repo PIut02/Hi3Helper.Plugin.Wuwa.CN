@@ -23,16 +23,13 @@ internal readonly struct WuwaTransform(byte secret) : ICryptoTransform
     public readonly Vector128<byte> SecretVector128 = Vector128.Create(secret);
     public readonly Vector128<byte> MaskVector128   = Vector128.Create(LineFeedChar);
 
-    public bool CanReuseTransform => true;
-
+    public bool CanReuseTransform          => true;
     public bool CanTransformMultipleBlocks => true;
-
-    public int InputBlockSize => 1;
-
-    public int OutputBlockSize => 1;
+    public int  InputBlockSize             => 1;
+    public int  OutputBlockSize            => 1;
 
     // We don't dispose anything as nothing is being allocated.
-    public void Dispose() {}
+    public void Dispose() { }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int TransformBlock(byte[] inputBuffer, int inputOffset, int inputCount, byte[] outputBuffer, int outputOffset)
@@ -43,12 +40,12 @@ internal readonly struct WuwaTransform(byte secret) : ICryptoTransform
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private unsafe void TransformWithAvx2IfSupported(ref int offset, int length, byte* inputBufferP, byte* outputBufferP)
     {
-        if (!Vector256<byte>.IsSupported || length - offset < Vector256<byte>.Count)
+        if (!Avx2.IsSupported || length - offset < Vector256<byte>.Count)
         {
             return;
         }
 
-        Start:
+    Start:
         // Load -> Compare Mask -> XOR All
         Vector256<byte> inputVecP = Vector256.Load(inputBufferP + offset);
         Vector256<byte> cmp       = Avx2.CompareEqual(inputVecP, MaskVector256);
@@ -70,12 +67,12 @@ internal readonly struct WuwaTransform(byte secret) : ICryptoTransform
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private unsafe void TransformWithSse2IfSupported(ref int offset, int length, byte* inputBufferP, byte* outputBufferP)
     {
-        if (!Vector128<byte>.IsSupported || length - offset < Vector128<byte>.Count)
+        if (!Sse2.IsSupported || length - offset < Vector128<byte>.Count)
         {
             return;
         }
 
-        Start:
+    Start:
         // Load -> Compare Mask -> XOR All
         Vector128<byte> inputVecP = Vector128.Load(inputBufferP + offset);
         Vector128<byte> cmp       = Sse2.CompareEqual(inputVecP, MaskVector128);

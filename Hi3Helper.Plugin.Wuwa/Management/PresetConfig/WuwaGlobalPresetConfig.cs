@@ -16,6 +16,8 @@ namespace Hi3Helper.Plugin.Wuwa.Management.PresetConfig;
 public partial class WuwaGlobalPresetConfig : PluginPresetConfigBase
 {
     private const string ApiResponseUrl = "https://prod-alicdn-gamestarter.kurogame.com/";
+
+    private const string ApiResponseAssetUrl = "https://pcdownload-huoshan.aki-game.net/";
     // private const string CurrentUninstKey = "";
     private const string CurrentTag = "G153";
     private const string CurrentPatchHash = "VlNTU1c8DAEsKzslESUCDRIQAiomLA4WKBEMIAABOQgyMSEgVAA";
@@ -100,7 +102,7 @@ public partial class WuwaGlobalPresetConfig : PluginPresetConfigBase
 
     public override IGameManager? GameManager
     {
-        get => field ??= new WuwaGameManager(ExecutableName, ApiResponseUrl, CurrentPatchHash, CurrentTag, Hash1);
+        get => field ??= new WuwaGameManager(ExecutableName, ApiResponseAssetUrl, CurrentPatchHash, CurrentTag, Hash1);
         set;
     }
 

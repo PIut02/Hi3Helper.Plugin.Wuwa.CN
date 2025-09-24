@@ -25,14 +25,14 @@ namespace Hi3Helper.Plugin.Wuwa.Management;
 internal partial class WuwaGameManager : GameManagerBase
 {
     internal WuwaGameManager(string gameExecutableNameByPreset,
-        string apiResponseBaseUrl,
+        string apiResponseAssetUrl,
         string authenticationHash,
         string gameTag,
         string hash1)
     {
         CurrentGameExecutableByPreset = gameExecutableNameByPreset;
         AuthenticationHash = authenticationHash;
-        ApiResponseBaseUrl = apiResponseBaseUrl;
+        ApiResponseAssetUrl = apiResponseAssetUrl;
         GameTag = gameTag;
         Hash1 = hash1;
     }
@@ -41,7 +41,7 @@ internal partial class WuwaGameManager : GameManagerBase
     protected override HttpClient ApiResponseHttpClient
     {
         get => field ??=
-            WuwaUtils.CreateApiHttpClient(ApiResponseBaseUrl, GameTag, AuthenticationHash, ApiOptions, Hash1);
+            WuwaUtils.CreateApiHttpClient(ApiResponseAssetUrl, GameTag, AuthenticationHash, ApiOptions, Hash1);
         set;
     }
 
@@ -49,11 +49,11 @@ internal partial class WuwaGameManager : GameManagerBase
     protected HttpClient ApiDownloadHttpClient
     {
         get => field ??=
-            WuwaUtils.CreateApiHttpClient(ApiResponseBaseUrl, GameTag, AuthenticationHash, ApiOptions, Hash1);
+            WuwaUtils.CreateApiHttpClient(ApiResponseAssetUrl, GameTag, AuthenticationHash, ApiOptions, Hash1);
         set;
     }
 
-    protected override string ApiResponseBaseUrl { get; }
+    protected string ApiResponseAssetUrl { get; }
     protected string GameTag { get; set; }
     protected string AuthenticationHash { get; set; }
     protected string ApiOptions { get; set; }
@@ -67,6 +67,8 @@ internal partial class WuwaGameManager : GameManagerBase
     internal string? GameResourceBaseUrl { get; set; }
     internal string? GameResourceBasisPath { get; set; }
     internal bool IsInitialized { get; set; }
+    
+    private const string DefaultResourceUrl = "https://pcdownload-huoshan.aki-game.net/launcher/game/";
 
     protected override GameVersion CurrentGameVersion
     {
@@ -151,7 +153,7 @@ internal partial class WuwaGameManager : GameManagerBase
             return 0;
 
         string gameConfigUrl =
-            ApiResponseBaseUrl + "/launcher/game/G153/50004_obOHXFrFanqsaIEOmuKroCcbZkQRBC7c/index.json";
+            ApiResponseAssetUrl + $"/launcher/game/{GameTag}/{AuthenticationHash.AeonPlsHelpMe()}/index.json";
 
         using HttpResponseMessage configMessage =
             await ApiResponseHttpClient.GetAsync(gameConfigUrl, HttpCompletionOption.ResponseHeadersRead, token);
@@ -174,8 +176,8 @@ internal partial class WuwaGameManager : GameManagerBase
             throw new NullReferenceException("Game API Launcher cannot retrieve BaseUrl reference value!");
 
         Uri gameResourceBase =
-            new(ApiResponseBaseUrl); // TODO for Cry0: Replace this as the actual base URL for the game resources from default.cdnList.url
-        GameResourceBaseUrl = $"{gameResourceBase.Scheme}://{gameResourceBase.Host}";
+            new(ApiResponseAssetUrl); // TODO for Cry0: Replace this as the actual base URL for the game resources from default.cdnList.url
+        GameResourceBaseUrl = $"{gameResourceBase.Scheme}://{ApiResponseAssetUrl}/launcher/game/{GameTag}/{AuthenticationHash.AeonPlsHelpMe()}/index.json";
 
         // Set API current game version
         if (ApiGameConfigResponse.Default.ConfigReference.CurrentVersion == GameVersion.Empty)

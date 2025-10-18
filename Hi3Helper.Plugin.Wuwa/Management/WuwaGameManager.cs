@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices.Marshalling;
 using System.Text.Json;
@@ -210,38 +211,84 @@ internal partial class WuwaGameManager : GameManagerBase
     }
 
     protected override Task<string?> FindExistingInstallPathAsyncInner(CancellationToken token)
-        => Task.Factory.StartNew<string?>(() =>
+        => Task.Run(() =>
         {
             if (string.IsNullOrEmpty(CurrentGameInstallPath))
                 return null;
+
             string? rootSearchPath = Path.GetDirectoryName(Path.GetDirectoryName(CurrentGameInstallPath));
             if (string.IsNullOrEmpty(rootSearchPath))
                 return null;
 
-            // ReSharper disable once LoopCanBeConvertedToQuery
             string gameName = Path.GetFileNameWithoutExtension(CurrentGameExecutableByPreset);
-#if DEBUG
-            SharedStatic.InstanceLogger.LogTrace("Start finding game existing installation using prefix: {PrefixName} from root path: {RootPath}", gameName, rootSearchPath);
-#endif
-            foreach (string dirPath in Directory.EnumerateDirectories(rootSearchPath, $"{gameName}",
-                         SearchOption.AllDirectories))
+
+            var options = new EnumerationOptions
             {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                MatchType = MatchType.Simple
+            };
+
 #if DEBUG
-                SharedStatic.InstanceLogger.LogTrace("Checking for game presence in directory: {DirPath}", dirPath);
+        SharedStatic.InstanceLogger.LogTrace("Start finding game existing installation using prefix: {PrefixName} from root path: {RootPath}", gameName, rootSearchPath);
 #endif
-                foreach (string path in Directory.EnumerateFiles(dirPath, $"*{gameName}*",
-                             SearchOption.TopDirectoryOnly))
+
+            try
+            {
+                foreach (string filePath in Directory.EnumerateFiles(rootSearchPath, $"*{gameName}*", options))
                 {
+                    if (token.IsCancellationRequested)
+                        return null;
+
 #if DEBUG
-                    SharedStatic.InstanceLogger.LogTrace("Got executable file at: {ExecPath}", path);
+                SharedStatic.InstanceLogger.LogTrace("Got executable file at: {ExecPath}", filePath);
 #endif
-                    string? parentPath = Path.GetDirectoryName(path);
+
+                    string? parentPath = Path.GetDirectoryName(filePath);
                     if (parentPath == null)
                         continue;
 
-                    string jsonPath = Path.Combine(parentPath, "game-launcher-config.json");
-                    if (File.Exists(jsonPath)) return parentPath;
+                    string jsonPath = Path.Combine(parentPath, "launcherDownloadConfig.json");
+                    if (File.Exists(jsonPath))
+                    {
+#if DEBUG
+                    SharedStatic.InstanceLogger.LogTrace("Found launcherDownloadConfig.json at: {JsonPath}", jsonPath);
+#endif
+                        return parentPath;
+                    }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
+            }
+            catch (ArgumentException ex)
+            {
+#if DEBUG
+            SharedStatic.InstanceLogger.LogTrace("ArgumentException while enumerating files: {Error}", ex.Message);
+#endif
+                return null;
+            }
+            catch (PathTooLongException ex)
+            {
+#if DEBUG
+            SharedStatic.InstanceLogger.LogTrace("PathTooLongException while enumerating files: {Error}", ex.Message);
+#endif
+                return null;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+#if DEBUG
+            SharedStatic.InstanceLogger.LogTrace("Access denied while enumerating files: {Error}", ex.Message);
+#endif
+                return null;
+            }
+            catch (IOException ex)
+            {
+#if DEBUG
+            SharedStatic.InstanceLogger.LogTrace("IO error while enumerating files: {Error}", ex.Message);
+#endif
+                return null;
             }
 
             return null;
@@ -253,17 +300,17 @@ internal partial class WuwaGameManager : GameManagerBase
         if (string.IsNullOrEmpty(CurrentGameInstallPath))
         {
             SharedStatic.InstanceLogger.LogWarning(
-                "[HBRGameManager::LoadConfig] Game directory isn't set! Game config won't be loaded.");
+                "[WuwaGameManager::LoadConfig] Game directory isn't set! Game config won't be loaded.");
             return;
         }
 
-        string filePath = Path.Combine(CurrentGameInstallPath, "game-launcher-config.json");
+        string filePath = Path.Combine(CurrentGameInstallPath, "launcherDownloadConfig.json");
         FileInfo fileInfo = new(filePath);
 
         if (!fileInfo.Exists)
         {
             SharedStatic.InstanceLogger.LogWarning(
-                "[HBRGameManager::LoadConfig] File game-launcher-config.json doesn't exist on dir: {Dir}",
+				"[WuwaGameManager::LoadConfig] File launcherDownloadConfig.json doesn't exist on dir: {Dir}",
                 CurrentGameInstallPath);
             return;
         }
@@ -272,18 +319,18 @@ internal partial class WuwaGameManager : GameManagerBase
         {
             using FileStream fileStream = fileInfo.OpenRead();
 #if USELIGHTWEIGHTJSONPARSER
-            CurrentGameConfig = HBRGameLauncherConfig.ParseFrom(fileStream);
+            CurrentGameConfig = WuwaGameLauncherConfig.ParseFrom(fileStream);
 #else
             CurrentGameConfigNode = JsonNode.Parse(fileStream) as JsonObject ?? new JsonObject();
 #endif
             SharedStatic.InstanceLogger.LogTrace(
-                "[HBRGameManager::LoadConfig] Loaded game-launcher-config.json from directory: {Dir}",
+				"[WuwaGameManager::LoadConfig] Loaded launcherDownloadConfig.json from directory: {Dir}",
                 CurrentGameInstallPath);
         }
         catch (Exception ex)
         {
             SharedStatic.InstanceLogger.LogError(
-                "[HBRGameManager::LoadConfig] Cannot load game-launcher-config.json! Reason: {Exception}", ex);
+				"[WuwaGameManager::LoadConfig] Cannot load launcherDownloadConfig.json! Reason: {Exception}", ex);
         }
     }
 
@@ -292,7 +339,7 @@ internal partial class WuwaGameManager : GameManagerBase
         if (string.IsNullOrEmpty(CurrentGameInstallPath))
         {
             SharedStatic.InstanceLogger.LogWarning(
-                "[HBRGameManager::LoadConfig] Game directory isn't set! Game config won't be saved.");
+                "[WuwaGameManager::LoadConfig] Game directory isn't set! Game config won't be saved.");
             return;
         }
 
@@ -305,7 +352,7 @@ internal partial class WuwaGameManager : GameManagerBase
         if (CurrentGameVersion == GameVersion.Empty)
         {
             SharedStatic.InstanceLogger.LogWarning(
-                "[HBRGameManager::SaveConfig] Current version returns 0.0.0! Overwrite the version to current provided version by API, {VersionApi}",
+                "[WuwaGameManager::SaveConfig] Current version returns 0.0.0! Overwrite the version to current provided version by API, {VersionApi}",
                 ApiGameVersion);
             CurrentGameVersion = ApiGameVersion;
         }

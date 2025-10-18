@@ -177,38 +177,154 @@ partial class WuwaGameInstaller : GameInstallerBase
 
         SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Total bytes to download (sum of index sizes): {TotalBytes}", totalBytesToDownload);
 
+        // Calculate initial downloaded bytes from disk to ensure UI sees meaningful values immediately.
         long downloadedBytes = 0;
-
-        // Prepare an InstallProgress instance if available and keep it updated
-        InstallProgress installProgress = default;
         try
         {
-            // Initialize fields commonly used by UI
-            installProgress.DownloadedCount = 0;
-            installProgress.TotalCountToDownload = index.Resource.Length;
-            installProgress.DownloadedBytes = 0;
-            installProgress.TotalBytesToDownload = totalBytesToDownload;
+            downloadedBytes = await CalculateDownloadedBytesAsync(token).ConfigureAwait(false);
+            SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] Initial downloaded bytes from disk: {DownloadedBytes}", downloadedBytes);
+        }
+        catch (Exception ex)
+        {
+            SharedStatic.InstanceLogger.LogWarning("[WuwaGameInstaller::StartInstallAsyncInner] Failed to compute initial downloaded bytes: {Err}", ex.Message);
+            downloadedBytes = 0;
+        }
+
+        // Avoid reporting >100%: clamp to totalBytesToDownload (if known)
+        if (totalBytesToDownload > 0 && downloadedBytes > totalBytesToDownload)
+        {
+            SharedStatic.InstanceLogger.LogWarning("[WuwaGameInstaller::StartInstallAsyncInner] Downloaded bytes on disk ({Disk}) exceed index total ({Index}). Clamping reported downloaded bytes.", downloadedBytes, totalBytesToDownload);
+            downloadedBytes = totalBytesToDownload;
+        }
+
+        // Compute how many entries are actually downloadable (non-null + have a Dest).
+        int totalCountToDownload = 0;
+        foreach (var e in index.Resource)
+        {
+            if (e != null && !string.IsNullOrEmpty(e.Dest))
+                totalCountToDownload++;
+        }
+
+        // Compute how many files are already present and valid (to seed the file counter).
+        // IMPORTANT: avoid expensive MD5 hashing on large files during seeding to prevent long blocking.
+        int alreadyDownloadedCount = 0;
+        try
+        {
+            // If MD5 validation is required during seeding, only compute for small files.
+            const long Md5CheckSizeThreshold = 50L * 1024L * 1024L; // 50 MB
+
+            foreach (var e in index.Resource)
+            {
+                token.ThrowIfCancellationRequested();
+                if (e == null || string.IsNullOrEmpty(e.Dest))
+                    continue;
+
+                string relativePath = e.Dest.Replace('/', Path.DirectorySeparatorChar);
+                string outputPath = Path.Combine(installPath, relativePath);
+
+                if (!File.Exists(outputPath))
+                    continue;
+
+                try
+                {
+                    var fi = new FileInfo(outputPath);
+
+                    // Prefer size comparison (very fast) if size info present in index.
+                    if (e.Size > 0)
+                    {
+                        if (fi.Length == (long)e.Size)
+                        {
+                            alreadyDownloadedCount++;
+                            continue;
+                        }
+                        else
+                        {
+                            SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] Size mismatch for seeding: {Path} (disk={Disk}, index={Index})", outputPath, fi.Length, e.Size);
+                            continue;
+                        }
+                    }
+
+                    // If no size but MD5 is provided and file is reasonably small, compute MD5.
+                    if (!string.IsNullOrEmpty(e.Md5) && fi.Length <= Md5CheckSizeThreshold)
+                    {
+                        using var fs = File.OpenRead(outputPath);
+                        string fileMd5 = ComputeMD5Hex(fs);
+                        if (string.Equals(fileMd5, e.Md5, StringComparison.OrdinalIgnoreCase))
+                        {
+                            alreadyDownloadedCount++;
+                            continue;
+                        }
+                        else
+                        {
+                            SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] MD5 mismatch during seeding: {Path}", outputPath);
+                            continue;
+                        }
+                    }
+
+                    // No reliable quick check possible (either no size, MD5 too expensive, or MD5 missing).
+                    // Treat as not downloaded so installer will (re)validate/download it.
+                }
+                catch (Exception ex)
+                {
+                    SharedStatic.InstanceLogger.LogWarning("[WuwaGameInstaller::StartInstallAsyncInner] Error while checking existing file during seeding: {Err}", ex.Message);
+                    // ignore individual file errors
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // if cancelled while seeding counts, proceed with what we have
+        }
+
+        // Prepare an InstallProgress instance and set deterministic initial values
+        InstallProgress installProgress = default;
+        installProgress.DownloadedCount = alreadyDownloadedCount;
+        installProgress.TotalCountToDownload = totalCountToDownload;
+        installProgress.DownloadedBytes = downloadedBytes;
+        installProgress.TotalBytesToDownload = totalBytesToDownload;
+
+        // Send an initial progress/state update so UI sees non-zero totals immediately.
+        try
+        {
+            progressStateDelegate?.Invoke(InstallProgressState.Preparing);
         }
         catch
         {
-            // If InstallProgress is not available or shape differs, ignore initialization and still try to call delegates where possible.
+            // Swallow to avoid crashes; UI may be incompatible on some hosts.
+        }
+
+        try
+        {
+            progressDelegate?.Invoke(in installProgress);
+        }
+        catch
+        {
+            // Swallow to avoid crashes; at least internal state is initialized now.
         }
 
         // helper callback used by download helpers to report byte increments
         void OnBytesWritten(long delta)
         {
             // delta can be negative in some validation scenarios (not used here) but keep handling generic
-            downloadedBytes += delta;
-            try
+            if (delta != 0)
             {
-                installProgress.DownloadedBytes = downloadedBytes;
-                installProgress.TotalBytesToDownload = totalBytesToDownload;
-                progressDelegate?.Invoke(in installProgress);
-            }
-            catch
-            {
-                // If delegate signatures differ, swallow errors to avoid crashing the installer.
-                progressDelegate?.Invoke(in installProgress);
+                downloadedBytes += delta;
+
+                // Keep reported downloaded bytes within the index total to avoid showing >100%
+                long reportedBytes = downloadedBytes;
+                if (totalBytesToDownload > 0 && reportedBytes > totalBytesToDownload)
+                    reportedBytes = totalBytesToDownload;
+
+                try
+                {
+                    installProgress.DownloadedBytes = reportedBytes;
+                    installProgress.TotalBytesToDownload = totalBytesToDownload;
+                    progressDelegate?.Invoke(in installProgress);
+                }
+                catch
+                {
+                    // Swallow delegate errors to avoid crashing the installer.
+                }
             }
         }
 
@@ -234,19 +350,8 @@ partial class WuwaGameInstaller : GameInstallerBase
                 Directory.CreateDirectory(parentDir);
             }
 
-            // Signal starting this entry
-            try
-            {
-                installProgress.DownloadedCount++;
-                progressStateDelegate?.Invoke(InstallProgressState.Download);
-                progressDelegate?.Invoke(in installProgress);
-            }
-            catch
-            {
-                // ignore delegate invocation errors
-            }
-
-            // If file exists and md5 matches, skip download
+            // Check existing file before starting download
+            bool skipBecauseValid = false;
             if (File.Exists(outputPath))
             {
                 try
@@ -254,36 +359,68 @@ partial class WuwaGameInstaller : GameInstallerBase
                     var fi = new FileInfo(outputPath);
                     SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] File exists: {File} (len={Len})", outputPath, fi.Length);
 
-                    if (!string.IsNullOrEmpty(entry.Md5))
+                    // Prefer quick size check if index has it
+                    if (entry.Size > 0)
                     {
-                        using var fs = File.OpenRead(outputPath);
-                        string currentMd5 = ComputeMD5Hex(fs);
-                        SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] Existing file md5={Md5Existing}, expected={Md5Expected}", currentMd5, entry.Md5);
-
-                        if (string.Equals(currentMd5, entry.Md5, StringComparison.OrdinalIgnoreCase))
+                        if (fi.Length == (long)entry.Size)
+                            skipBecauseValid = true;
+                        else
+                            SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Existing file size mismatch; re-downloading: {Dest}", entry.Dest);
+                    }
+                    else if (!string.IsNullOrEmpty(entry.Md5))
+                    {
+                        // Only compute MD5 for reasonably small files to avoid long blocks
+                        const long Md5CheckSizeThreshold = 50L * 1024L * 1024L; // 50 MB
+                        if (fi.Length <= Md5CheckSizeThreshold)
                         {
-                            downloadedBytes += (long)entry.Size;
-                            try
-                            {
-                                installProgress.DownloadedBytes = downloadedBytes;
-                                progressDelegate?.Invoke(in installProgress);
-                            }
-                            catch { }
+                            using var fs = File.OpenRead(outputPath);
+                            string currentMd5 = ComputeMD5Hex(fs);
+                            SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] Existing file md5={Md5Existing}, expected={Md5Expected}", currentMd5, entry.Md5);
 
-                            SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Skipping entry (already valid): {Dest}", entry.Dest);
-                            continue;
+                            if (string.Equals(currentMd5, entry.Md5, StringComparison.OrdinalIgnoreCase))
+                                skipBecauseValid = true;
+                            else
+                                SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Existing file md5 mismatch; re-downloading: {Dest}", entry.Dest);
                         }
                         else
                         {
-                            SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Existing file md5 mismatch; re-downloading: {Dest}", entry.Dest);
+                            SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] Skipping MD5 validation for large existing file during runtime: {File}", outputPath);
+                            // Treat as not valid -> re-download to be safe (avoids blocking)
                         }
                     }
+                    // else: no md5 and unknown size -> treat as not valid (re-download)
                 }
                 catch (Exception ex)
                 {
                     SharedStatic.InstanceLogger.LogWarning("[WuwaGameInstaller::StartInstallAsyncInner] Error while checking existing file: {Err}", ex.Message);
                     // fallback to re-download
                 }
+            }
+
+            if (skipBecauseValid)
+            {
+                // already counted when seeding, but still update bytes/progress
+                try
+                {
+                    installProgress.DownloadedBytes = downloadedBytes > totalBytesToDownload && totalBytesToDownload > 0 ? totalBytesToDownload : downloadedBytes;
+                    installProgress.TotalBytesToDownload = totalBytesToDownload;
+                    progressDelegate?.Invoke(in installProgress);
+                }
+                catch { }
+
+                SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Skipping entry (already valid): {Dest}", entry.Dest);
+                continue;
+            }
+
+            // Signal state for currently downloading this entry (do not increment downloaded count yet)
+            try
+            {
+                progressStateDelegate?.Invoke(InstallProgressState.Download);
+                progressDelegate?.Invoke(in installProgress);
+            }
+            catch
+            {
+                // ignore delegate invocation errors
             }
 
             // Download either as whole file or by chunks
@@ -326,16 +463,16 @@ partial class WuwaGameInstaller : GameInstallerBase
                 }
             }
 
-            // mark file as downloaded in counts (already incremented when starting)
+            // Completed this entry: increment completed-file counter and update progress
             try
             {
-                // make sure downloaded bytes accounted (entry.Size should be included via OnBytesWritten already)
-                installProgress.DownloadedBytes = downloadedBytes;
+                installProgress.DownloadedCount++;
+                installProgress.DownloadedBytes = downloadedBytes > totalBytesToDownload && totalBytesToDownload > 0 ? totalBytesToDownload : downloadedBytes;
                 progressDelegate?.Invoke(in installProgress);
             }
             catch { }
 
-            // Note: additional state updates (e.g. progressStateDelegate to Completed) can be invoked here if desired.
+            // Note: additional state updates (e.g. per-entry Completed) can be invoked here if desired.
         }
 
         SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Install loop finished. Downloaded bytes sum: {Downloaded}", downloadedBytes);
@@ -400,7 +537,7 @@ partial class WuwaGameInstaller : GameInstallerBase
 
             // Notify state change to "installed" and send a final progress update.
             progressStateDelegate?.Invoke(InstallProgressState.Completed);
-            installProgress.DownloadedBytes = downloadedBytes;
+            installProgress.DownloadedBytes = downloadedBytes > totalBytesToDownload && totalBytesToDownload > 0 ? totalBytesToDownload : downloadedBytes;
             progressDelegate?.Invoke(in installProgress);
         }
         catch (Exception ex)

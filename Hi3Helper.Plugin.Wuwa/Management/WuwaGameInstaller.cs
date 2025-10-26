@@ -2,19 +2,19 @@
 using Hi3Helper.Plugin.Core.Management;
 using Hi3Helper.Plugin.Core.Utility;
 using Hi3Helper.Plugin.Wuwa.Management.Api;
+using Hi3Helper.Plugin.Wuwa.Utils;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Buffers;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices.Marshalling;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Buffers;
-using System.Linq;
+
 // ReSharper disable LoopCanBeConvertedToQuery
 
 namespace Hi3Helper.Plugin.Wuwa.Management;
@@ -272,7 +272,7 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 					if (!string.IsNullOrEmpty(e.Md5) && fi.Length <= Md5CheckSizeThreshold)
 					{
                         await using var fs      = File.OpenRead(outputPath);
-                        string          fileMd5 = ComputeMd5Hex(fs);
+                        string          fileMd5 = await WuwaUtils.ComputeMd5HexAsync(fs, token);
                         if (string.Equals(fileMd5, e.Md5, StringComparison.OrdinalIgnoreCase))
 						{
 							alreadyDownloadedCount++;
@@ -374,7 +374,7 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 						if (fi.Length <= Md5CheckSizeThreshold)
 						{
                             await using var fs         = File.OpenRead(outputPath);
-                            string          currentMd5 = ComputeMd5Hex(fs);
+                            string          currentMd5 = await WuwaUtils.ComputeMd5HexAsync(fs, token);
                             SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] Existing file md5={Md5Existing}, expected={Md5Expected}", currentMd5, entry.Md5);
 
 							if (string.Equals(currentMd5, entry.Md5, StringComparison.OrdinalIgnoreCase))
@@ -471,7 +471,7 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 				try
 				{
                     await using var fsVerify = File.OpenRead(outputPath);
-                    string          md5      = ComputeMd5Hex(fsVerify);
+                    string          md5      = await WuwaUtils.ComputeMd5HexAsync(fsVerify, token);
                     if (!string.Equals(md5, entry.Md5, StringComparison.OrdinalIgnoreCase))
 					{
 						SharedStatic.InstanceLogger.LogError("[WuwaGameInstaller::StartInstallAsyncInner] MD5 mismatch for {Dest}. Expected {Expected}, got {Got}", entry.Dest, entry.Md5, md5);
@@ -626,16 +626,7 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 	}
 
     // ---------- Helpers ----------
-    private static string ComputeMd5Hex(Stream stream)
-    {
-        stream.Seek(0, SeekOrigin.Begin);
-        using var md5 = MD5.Create();
-        byte[] hash = md5.ComputeHash(stream);
-        var sb = new StringBuilder(hash.Length * 2);
-        foreach (byte b in hash)
-            sb.Append(b.ToString("x2"));
-        return sb.ToString();
-    }
+    // Note for @Cry0. ComputeMd5Hex has been moved to WuwaUtils.
 
     // Robust Download helpers with fallbacks and diagnostic logs
     private async Task TryDownloadWholeFileWithFallbacksAsync(Uri originalUri, string outputPath, string rawDest, CancellationToken token, Action<long>? progressCallback)

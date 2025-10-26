@@ -4,9 +4,14 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Buffers;
 using System.Buffers.Text;
+using System.IO;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 // ReSharper disable IdentifierTypo
+// ReSharper disable StringLiteralTypo
 
 namespace Hi3Helper.Plugin.Wuwa.Utils;
 
@@ -15,7 +20,7 @@ internal static class WuwaUtils
     internal static HttpClient CreateApiHttpClient(string? apiBaseUrl = null, string? gameTag = null, string? authCdnToken = "", string? apiOptions = "", string? hash1 = "")
         => CreateApiHttpClientBuilder(apiBaseUrl, gameTag, authCdnToken, apiOptions, hash1).Create();
 
-    internal static PluginHttpClientBuilder CreateApiHttpClientBuilder(string? apiBaseUrl, string? gameTag = null, string? authCdnToken= "", string? accessOption = null, string? hash1 = "")
+    private static PluginHttpClientBuilder CreateApiHttpClientBuilder(string? apiBaseUrl, string? gameTag = null, string? authCdnToken= "", string? accessOption = null, string? hash1 = "")
     {
         PluginHttpClientBuilder builder = new PluginHttpClientBuilder()
             .SetUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36");
@@ -171,20 +176,71 @@ internal static class WuwaUtils
                 string removedWs = new string(buf, 0, di);
                 SharedStatic.InstanceLogger.LogInformation(
                     "[WuwaUtils::AeonPlsHelpMe] Sanitization removed whitespace from decoded string. Before: {BeforePreview}, After: {AfterPreview}",
-                    beforeSanitize.Length <= 80 ? beforeSanitize : beforeSanitize.Substring(0, 80) + "...",
-                    removedWs.Length <= 80 ? removedWs : removedWs.Substring(0, 80) + "...");
+                    beforeSanitize.Length <= 80 ? beforeSanitize : beforeSanitize[..80] + "...",
+                    removedWs.Length <= 80 ? removedWs : removedWs[..80] + "...");
                 sanitized = removedWs;
             }
         }
 
         if (sanitized.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
-            sanitized = sanitized.Substring("http://".Length);
+            sanitized = sanitized["http://".Length..];
         else if (sanitized.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            sanitized = sanitized.Substring("https://".Length);
+            sanitized = sanitized["https://".Length..];
 
         sanitized = sanitized.TrimEnd('/');
 
         return sanitized;
+    }
+
+    internal static string ComputeMd5Hex(Stream stream, CancellationToken token = default)
+    {
+        stream.Seek(0, SeekOrigin.Begin);
+        using var md5 = MD5.Create();
+
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(64 << 10); // 64 KiB buffer
+        try
+        {
+            int bytesRead;
+            while ((bytesRead = stream.Read(buffer)) > 0)
+            {
+                md5.TransformBlock(buffer, 0, bytesRead, null, 0);
+            }
+            md5.TransformFinalBlock(buffer, 0, 0);
+
+            byte[] hash = md5.Hash!;
+            return Convert.ToHexStringLower(hash);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+
+    internal static async ValueTask<string> ComputeMd5HexAsync(Stream stream, CancellationToken token = default)
+    {
+        stream.Seek(0, SeekOrigin.Begin);
+        using var md5 = MD5.Create();
+
+        await md5.ComputeHashAsync(stream, token);
+
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(64 << 10); // 64 KiB buffer
+        try
+        {
+            int bytesRead;
+            while ((bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, token).ConfigureAwait(false)) > 0)
+            {
+                md5.TransformBlock(buffer, 0, bytesRead, null, 0);
+            }
+            md5.TransformFinalBlock(buffer, 0, 0);
+
+            byte[] hash = md5.Hash!;
+            return Convert.ToHexStringLower(hash);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 }
 

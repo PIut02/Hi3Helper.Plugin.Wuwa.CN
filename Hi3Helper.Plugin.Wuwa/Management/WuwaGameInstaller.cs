@@ -314,6 +314,8 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 
 		// Prepare an InstallProgress instance and set deterministic initial values
 		InstallProgress installProgress = default;
+		installProgress.StateCount = alreadyDownloadedCount;
+		installProgress.TotalStateToComplete = totalCountToDownload;
 		installProgress.DownloadedCount = alreadyDownloadedCount;
 		installProgress.TotalCountToDownload = totalCountToDownload;
 		installProgress.DownloadedBytes = downloadedBytes;
@@ -499,6 +501,7 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 			{
 				// mark path as seeded so we won't double count if another check occurs
 				seededPaths.Add(outputPath);
+				installProgress.StateCount++;
 				installProgress.DownloadedCount++;
 				installProgress.DownloadedBytes = downloadedBytes > totalBytesToDownload && totalBytesToDownload > 0 ? totalBytesToDownload : downloadedBytes;
 				progressDelegate?.Invoke(in installProgress);

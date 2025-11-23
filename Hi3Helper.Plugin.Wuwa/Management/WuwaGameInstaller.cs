@@ -29,6 +29,8 @@ internal partial class WuwaGameInstaller : GameInstallerBase
     private WuwaApiResponseResourceIndex? _currentIndex;
 
     private string? GameAssetBaseUrl => (GameManager as WuwaGameManager)?.GameResourceBaseUrl;
+    private string? GameResourceBasisPath => (GameManager as WuwaGameManager)?.GameResourceBasisPath;
+    private string? ApiResponseAssetUrl => (GameManager as WuwaGameManager)?.ApiResponseAssetUrl;
 
     private readonly HttpClient _downloadHttpClient;
 	internal WuwaGameInstaller(IGameManager? gameManager) : base(gameManager)
@@ -134,8 +136,20 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 			throw new InvalidOperationException("Game asset base URL is not initialized.");
 		}
 
-		// Ensure initialization (loads API/game config)
-		await InitAsync(token).ConfigureAwait(false);
+        if (GameResourceBasisPath is null)
+        {
+            SharedStatic.InstanceLogger.LogError("[WuwaGameInstaller::StartInstallAsyncInner] GameResourceBasisPath is null, aborting.");
+            throw new InvalidOperationException("Game resource basis path is not initialized.");
+        }
+
+        if (ApiResponseAssetUrl is null)
+        {
+            SharedStatic.InstanceLogger.LogError("[WuwaGameInstaller::StartInstallAsyncInner] ApiResponseAssetUrl is null, aborting.");
+            throw new InvalidOperationException("Api Response Asset Url is not initialized.");
+        }
+
+        // Ensure initialization (loads API/game config)
+        await InitAsync(token).ConfigureAwait(false);
 
 		// Download index JSON (use cached, but force refresh on first failure)
 		WuwaApiResponseResourceIndex? index = await GetCachedIndexAsync(false, token).ConfigureAwait(false);
@@ -175,13 +189,8 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 
 		// Base URI for resources: GameAssetBaseUrl typically ends with indexFile.json
 		Uri baseUri = new(GameAssetBaseUrl, UriKind.Absolute);
-		string baseDirectory = baseUri.GetLeftPart(UriPartial.Path);
-		// remove the index file part to get the directory
-		int lastSlash = baseDirectory.LastIndexOf('/');
-		if (lastSlash >= 0)
-			baseDirectory = baseDirectory[..(lastSlash + 1)];
 
-		SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] Base directory for resources: {BaseDir}", baseDirectory);
+		SharedStatic.InstanceLogger.LogDebug("[WuwaGameInstaller::StartInstallAsyncInner] Base directory for resources: {BaseDir}", GameResourceBasisPath);
 
 		long totalBytesToDownload = 0;
 		foreach (var r in index.Resource)
@@ -305,6 +314,8 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 
 		// Prepare an InstallProgress instance and set deterministic initial values
 		InstallProgress installProgress = default;
+		installProgress.StateCount = alreadyDownloadedCount;
+		installProgress.TotalStateToComplete = totalCountToDownload;
 		installProgress.DownloadedCount = alreadyDownloadedCount;
 		installProgress.TotalCountToDownload = totalCountToDownload;
 		installProgress.DownloadedBytes = downloadedBytes;
@@ -431,7 +442,7 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 			}
 
 			// Download either as whole file or by chunks
-			Uri fileUri = new Uri(new Uri(baseDirectory), entry.Dest);
+			Uri fileUri = new Uri(new Uri(new Uri(ApiResponseAssetUrl), GameResourceBasisPath), entry.Dest);
 			if (entry.ChunkInfos == null || entry.ChunkInfos.Length == 0)
 			{
 				// whole file with fallback attempts
@@ -490,6 +501,7 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 			{
 				// mark path as seeded so we won't double count if another check occurs
 				seededPaths.Add(outputPath);
+				installProgress.StateCount++;
 				installProgress.DownloadedCount++;
 				installProgress.DownloadedBytes = downloadedBytes > totalBytesToDownload && totalBytesToDownload > 0 ? totalBytesToDownload : downloadedBytes;
 				progressDelegate?.Invoke(in installProgress);

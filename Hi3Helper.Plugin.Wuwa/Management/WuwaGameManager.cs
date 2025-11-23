@@ -60,7 +60,7 @@ internal partial class WuwaGameManager : GameManagerBase
         set;
     }
 
-    private string ApiResponseAssetUrl { get; }
+    internal string ApiResponseAssetUrl { get; }
     private string GameTag { get; set; }
     private string ClientAccess { get; set; }
     private string CurrentPatch { get; set; }
@@ -74,7 +74,7 @@ internal partial class WuwaGameManager : GameManagerBase
     private JsonObject CurrentGameConfigNode { get; set; } = new();
 
     internal string? GameResourceBaseUrl { get; set; }
-    private string? GameResourceBasisPath { get; set; }
+    internal string? GameResourceBasisPath { get; set; }
     private bool IsInitialized { get; set; }
     
 
@@ -112,19 +112,25 @@ internal partial class WuwaGameManager : GameManagerBase
     {
         get
         {
-            string executablePath1 =
-                Path.Combine(CurrentGameInstallPath ?? string.Empty, CurrentGameExecutableByPreset);
+            string executablePath1 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+                CurrentGameExecutableByPreset);
             string executablePath2 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
                 Path.Combine(CurrentGameInstallPath!,
-                "Client\\Binaries\\Win64\\Client-Win64-ShippingBase.dll"));
+                    "Client\\Binaries\\Win64\\Client-Win64-ShippingBase.dll"));
             string executablePath3 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
                 Path.Combine(CurrentGameInstallPath!,
-				"Client\\Binaries\\Win64\\Client-Win64-Shipping.exe"));
+				    "Client\\Binaries\\Win64\\Client-Win64-Shipping.exe"));
 			string executablePath4 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
                 Path.Combine(CurrentGameInstallPath!,
 					"Client\\Binaries\\Win64\\ThirdParty\\KrPcSdk_Global\\KRSDKRes\\KRSDK.bin"));
-			return File.Exists(executablePath1) && File.Exists(executablePath2) && File.Exists(executablePath3) &&
-                   File.Exists(executablePath4);
+            string executablePath5 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+                Path.Combine(CurrentGameInstallPath!,
+                    "app-game-config.json"));
+			return File.Exists(executablePath1) &&
+                   File.Exists(executablePath2) &&
+                   File.Exists(executablePath3) &&
+                   File.Exists(executablePath4) &&
+                   File.Exists(executablePath5);
         }
     }
 

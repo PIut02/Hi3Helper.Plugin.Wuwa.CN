@@ -6,6 +6,7 @@ using Hi3Helper.Plugin.Wuwa.Utils;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -266,14 +267,12 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 		installProgress.DownloadedBytes = await CalculateDownloadedBytesAsync(token).ConfigureAwait(false);
 		installProgress.TotalBytesToDownload = totalBytesToDownload;
 
-		// Local helper: create a fresh, fully-initialized snapshot struct and report it.
-		// Only emit the diagnostic log once per DownloadedCount update to reduce spam.
 		int lastLoggedDownloadedCount = -1;
 		void ReportProgress()
 		{
 			try
 			{
-				// Build a fresh snapshot struct so marshalling/host sees fully-initialized memory.
+				// Build a fresh snapshot struct so marshalling/host sees fully-initialized memory
 				InstallProgress snap = default;
 				snap.StateCount = Volatile.Read(ref installProgress.StateCount);
 				snap.TotalStateToComplete = Volatile.Read(ref installProgress.TotalStateToComplete);
@@ -282,7 +281,6 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 				snap.DownloadedBytes = Interlocked.Read(ref installProgress.DownloadedBytes);
 				snap.TotalBytesToDownload = Interlocked.Read(ref installProgress.TotalBytesToDownload);
 
-				// Diagnostic log: only print when DownloadedCount changes to reduce log spam.
 				int prev = Interlocked.Exchange(ref lastLoggedDownloadedCount, snap.DownloadedCount);
 				if (prev != snap.DownloadedCount)
 				{
@@ -290,11 +288,10 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 						snap.DownloadedCount, snap.TotalCountToDownload, snap.DownloadedBytes, snap.TotalBytesToDownload, snap.StateCount, snap.TotalStateToComplete);
 				}
 
-				// Defensive: if host expects other field names, mirror likely aliases (not required but harmless).
 #pragma warning disable CS0618
 				try
 				{
-					// No-op placeholder for additional alias assignment if needed later.
+					// No-op placeholder for additional alias assignment if needed later
 				}
 				catch { }
 #pragma warning restore CS0618
@@ -313,9 +310,9 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 		ReportProgress();
 
 		// Collections for verification/cleanup
-		var filesToDelete = new System.Collections.Concurrent.ConcurrentBag<string>();
+		var filesToDelete = new ConcurrentBag<string>();
 
-		// Helper callback used by download helpers to report byte increments (thread-safe)
+		// Helper to report byte increments (thread-safe)
 		void DownloadBytesCallback(long delta)
 		{
 			if (delta == 0) return;
@@ -323,7 +320,7 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 			ReportProgress();
 		}
 
-		// --- Download Phase ---
+		#region Download Implementation
 		SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Starting download phase (count={Count})", downloadList.Count);
 		try { progressStateDelegate?.Invoke(InstallProgressState.Download); } catch { }
 
@@ -386,8 +383,9 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 			Interlocked.Increment(ref installProgress.DownloadedCount);
 			ReportProgress();
 		});
+		#endregion
 
-		// --- Verification Phase ---
+		#region Verification Phase
 		SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Starting verification phase.");
 		Volatile.Write(ref installProgress.StateCount, 0);
 		Volatile.Write(ref installProgress.DownloadedCount, 0);
@@ -478,9 +476,9 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 					try
 					{
 						if (entry.ChunkInfos == null || entry.ChunkInfos.Length == 0)
-							await TryDownloadWholeFileWithFallbacksAsync(fileUri, outputPath, entry.Dest, innerToken, DownloadBytesCallback).ConfigureAwait(false);
+							await TryDownloadWholeFileWithFallbacksAsync(fileUri, outputPath, entry.Dest ?? string.Empty, innerToken, DownloadBytesCallback).ConfigureAwait(false);
 						else
-							await TryDownloadChunkedFileWithFallbacksAsync(fileUri, outputPath, entry.ChunkInfos, entry.Dest, innerToken, DownloadBytesCallback).ConfigureAwait(false);
+							await TryDownloadChunkedFileWithFallbacksAsync(fileUri, outputPath, entry.ChunkInfos, entry.Dest ?? string.Empty, innerToken, DownloadBytesCallback).ConfigureAwait(false);
 
 						Interlocked.Increment(ref installProgress.StateCount);
 						Interlocked.Increment(ref installProgress.DownloadedCount);
@@ -493,8 +491,9 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 				});
 			}
 		}
+		#endregion
 
-		// --- Install / Extraction Phase (move temp -> final) ---
+		#region Install / Extraction Phase (move temp -> final)
 		SharedStatic.InstanceLogger.LogInformation("[WuwaGameInstaller::StartInstallAsyncInner] Starting install/extract phase.");
 		Volatile.Write(ref installProgress.StateCount, 0);
 		Volatile.Write(ref installProgress.DownloadedCount, 0);
@@ -541,8 +540,9 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 				Directory.Delete(tempPath, true);
 		}
 		catch { /* ignore cleanup errors */ }
+		#endregion
 
-		// Post-install actions...
+		#region Post-install actions routines
 		try
 		{
 			GameManager.GetApiGameVersion(out GameVersion latestVersion);
@@ -604,17 +604,18 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 		{
 			// swallow
 		}
+		#endregion
 	}
 
-    protected override Task StartPreloadAsyncInner(InstallProgressDelegate? progressDelegate, InstallProgressStateDelegate? progressStateDelegate, CancellationToken token)
+	protected override Task StartPreloadAsyncInner(InstallProgressDelegate? progressDelegate, InstallProgressStateDelegate? progressStateDelegate, CancellationToken token)
     {
-        // For preload, reuse install routine for now (could filter resources)
+        // reuse install routine for now (could filter resources)
         return StartInstallAsyncInner(progressDelegate, progressStateDelegate, token);
     }
 
     protected override Task StartUpdateAsyncInner(InstallProgressDelegate? progressDelegate, InstallProgressStateDelegate? progressStateDelegate, CancellationToken token)
     {
-        // For update, reuse install routine (will overwrite or skip existing files)
+        // reuse install routine (will overwrite or skip existing files)
         return StartInstallAsyncInner(progressDelegate, progressStateDelegate, token);
     }
 
@@ -639,11 +640,11 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 		GC.SuppressFinalize(this);
 	}
 
-    // ---------- Helpers ----------
-    // Note for @Cry0. ComputeMd5Hex has been moved to WuwaUtils.
+	#region Helpers
+	// Note for @Cry0. ComputeMd5Hex has been moved to WuwaUtils.
 
-    // Robust Download helpers with fallbacks and diagnostic logs
-    private async Task TryDownloadWholeFileWithFallbacksAsync(Uri originalUri, string outputPath, string rawDest, CancellationToken token, Action<long>? progressCallback)
+	// Robust Download helpers with fallbacks and diagnostic logs
+	private async Task TryDownloadWholeFileWithFallbacksAsync(Uri originalUri, string outputPath, string rawDest, CancellationToken token, Action<long>? progressCallback)
     {
         // Try original first
         try
@@ -949,9 +950,8 @@ internal partial class WuwaGameInstaller : GameInstallerBase
         }
     }
 
-	// Add this method to the WuwaGameInstaller class to fix CS0103.
-	// This method provides a cached (with expiration) or fresh download of the resource index.
-	// It uses the _currentIndex field and _cacheExpiredUntil to manage cache expiration.
+	// This method provides a cached (with expiration) or fresh download of the resource index
+	// It uses the _currentIndex field and _cacheExpiredUntil to manage cache expiration
 
 	private async Task<WuwaApiResponseResourceIndex?> GetCachedIndexAsync(bool forceRefresh, CancellationToken token)
 	{
@@ -1002,8 +1002,6 @@ internal partial class WuwaGameInstaller : GameInstallerBase
 	{
 		_cacheExpiredUntil = DateTimeOffset.UtcNow.AddMinutes(ExCacheDurationInMinute);
 	}
-	// Add this method to fix CS0103: The name 'DownloadResourceIndexAsync' does not exist in the current context.
-	// This method downloads and parses the resource index JSON from the given URL.
 
 	private async Task<WuwaApiResponseResourceIndex?> DownloadResourceIndexAsync(string url, CancellationToken token)
 	{
@@ -1129,9 +1127,10 @@ internal partial class WuwaGameInstaller : GameInstallerBase
         }
 		catch (JsonException ex)
 		{
-			// Malformed JSON or parse error; return null and let callers handle defensively.
+			// Malformed JSON or parse error
 			SharedStatic.InstanceLogger.LogError("[WuwaGameInstaller::DownloadResourceIndexAsync] JSON parse error: {Err}", ex.Message);
 			return null;
 		}
 	}
+	#endregion
 }

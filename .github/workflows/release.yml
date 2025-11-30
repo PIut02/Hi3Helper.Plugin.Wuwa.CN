@@ -20,6 +20,11 @@ on:
         - DebugNoReflectionPublish
         default: ReleaseNoReflectionPublish-O1
 
+permissions:
+  id-token: write
+  contents: read
+  attestations: write
+
 jobs:
   release:
     runs-on: windows-latest
@@ -44,6 +49,11 @@ jobs:
 
     - name: Publish with selected profile
       run: dotnet publish Hi3Helper.Plugin.Wuwa/Hi3Helper.Plugin.Wuwa.csproj --configuration Release --runtime win-x64 /p:PublishProfile=${{ inputs.publish_profile }} -o ./publish
+
+    - name: Generate build provenance
+      uses: actions/attest-build-provenance@v1
+      with:
+        subject-path: './publish/**'
 
     - name: Run Indexer
       run: .\Indexer.exe .\publish

@@ -75,11 +75,26 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Checkout target repo
+      uses: actions/checkout@v4
+      with:
+        repository: CollapseLauncher/CollapseLauncher-ReleaseRepo
+        path: ./target-repo
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Copy files to target repo
+      run: |
+        New-Item -ItemType Directory -Force -Path ./target-repo/inhouse-plugin/wuwa/build
+        Copy-Item -Path ./publish/Waves.dll -Destination ./target-repo/inhouse-plugin/wuwa/
+        Copy-Item -Path ./publish/Waves.pdb -Destination ./target-repo/inhouse-plugin/wuwa/
+        Copy-Item -Path ./publish/manifest.json -Destination ./target-repo/inhouse-plugin/wuwa/
+        Copy-Item -Path ./publish/build/*.zip -Destination ./target-repo/inhouse-plugin/wuwa/build/
+
     - name: Create Pull Request in Release Repo
       uses: peter-evans/create-pull-request@v7
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        repository: CollapseLauncher/CollapseLauncher-ReleaseRepo
+        path: ./target-repo
         branch: wuwa-plugin-release-${{ inputs.version }}
         base: main
         title: 'Release Wuwa Plugin v${{ inputs.version }}'
@@ -94,10 +109,4 @@ jobs:
           - manifest.json
           - build/*.zip
         commit-message: 'Release Wuwa Plugin v${{ inputs.version }}'
-        path: inhouse-plugin/wuwa
-        add-paths: |
-          ./publish/Waves.dll
-          ./publish/Waves.pdb
-          ./publish/manifest.json
-          ./publish/build/*.zip
         delete-branch: false

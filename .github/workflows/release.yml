@@ -71,7 +71,7 @@ jobs:
         tag_name: v${{ inputs.version }}
         name: Release v${{ inputs.version }}
         body: ${{ steps.git-cliff.outputs.content }}
-        files: ./publish/build/*.zip
+        files: ./publish/*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -88,7 +88,7 @@ jobs:
         Copy-Item -Path ./publish/Waves.dll -Destination ./target-repo/inhouse-plugin/wuwa/
         Copy-Item -Path ./publish/Waves.pdb -Destination ./target-repo/inhouse-plugin/wuwa/
         Copy-Item -Path ./publish/manifest.json -Destination ./target-repo/inhouse-plugin/wuwa/
-        Copy-Item -Path ./publish/build/*.zip -Destination ./target-repo/inhouse-plugin/wuwa/build/
+        Copy-Item -Path ./publish/*.zip -Destination ./target-repo/inhouse-plugin/wuwa/build/
 
     - name: Create Pull Request in Release Repo
       uses: peter-evans/create-pull-request@v7

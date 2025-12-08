@@ -66,16 +66,14 @@ jobs:
     - name: Run Indexer
       run: .\Indexer.exe .\publish
 
-    # --- STEP 3: Fix Changelog "Latest" Detection ---
-    - name: Create Local Tag for Changelog
-      run: git tag v${{ inputs.version }}
-
     # --- STEP 4: Generate Changelog ---
     - name: Generate Changelog
       uses: orhun/git-cliff-action@v4
       with:
         config: cliff.toml
-        args: --latest --strip header
+        # --tag: Sets the header title to the version we want
+        # (Implicitly grabs all "unreleased" changes since v0.4.0)
+        args: --tag v${{ inputs.version }} --strip header
       id: git-cliff
 
     # --- STEP 5: Create GitHub Release ---

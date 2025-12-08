@@ -126,11 +126,11 @@ internal partial class WuwaGameManager : GameManagerBase
             string executablePath5 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
                 Path.Combine(CurrentGameInstallPath!,
                     "app-game-config.json"));
-			return File.Exists(executablePath1) &&
-                   File.Exists(executablePath2) &&
-                   File.Exists(executablePath3) &&
-                   File.Exists(executablePath4) &&
-                   File.Exists(executablePath5);
+            return File.Exists(executablePath1) &&
+                           File.Exists(executablePath2) &&
+                           File.Exists(executablePath3) &&
+                           File.Exists(executablePath4) &&
+                           File.Exists(executablePath5);
         }
     }
 
@@ -189,19 +189,15 @@ internal partial class WuwaGameManager : GameManagerBase
         if (ApiGameConfigResponse.Default.ConfigReference.CurrentVersion == GameVersion.Empty)
             throw new NullReferenceException("Game API Launcher cannot retrieve CurrentVersion value!");
 
+        // Dynamically set the resource base URL using IndexFile from the response
+        GameResourceBaseUrl = $"{ApiResponseAssetUrl}{ApiGameConfigResponse.Default.ConfigReference.IndexFile}";
+
+        // Set the basis path if needed (from BaseUrl in the response, if still required for other logic)
         GameResourceBasisPath = ApiGameConfigResponse.Default.ConfigReference.BaseUrl;
         if (GameResourceBasisPath == null)
             throw new NullReferenceException("Game API Launcher cannot retrieve BaseUrl reference value!");
 
-        Uri gameResourceBase =
-            new(ApiResponseAssetUrl);
-        GameResourceBaseUrl = $"https://{ApiResponseAssetUrl.AeonPlsHelpMe()}/launcher/game/" +
-                              $"{GameTag.AeonPlsHelpMe()}/{ClientAccess.AeonPlsHelpMe()}/{CurrentPatch}/" +
-                              $"{Hash2.AeonPlsHelpMe()}/resource/{ClientAccess.AeonPlsHelpMe()}/{CurrentPatch}/indexFile.json";
-        
-        SharedStatic.InstanceLogger.LogDebug("Game Resource Base URL: {GameResourceBaseUrl}", GameResourceBaseUrl);
-
-        // Set API current game version
+        // Set API current game version dynamically
         if (ApiGameConfigResponse.Default.ConfigReference.CurrentVersion == GameVersion.Empty)
             throw new InvalidOperationException(
                 $"API GameConfig returns an invalid CurrentVersion data! Data: {ApiGameConfigResponse.Default.ConfigReference.CurrentVersion}");

@@ -32,13 +32,13 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         fetch-depth: 0
         submodules: true
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
         dotnet-version: '10.0.x'
 
@@ -52,7 +52,7 @@ jobs:
       run: dotnet publish Hi3Helper.Plugin.Wuwa/Hi3Helper.Plugin.Wuwa.csproj --configuration Release --runtime win-x64 /p:PublishProfile=${{ inputs.publish_profile }} -o ./publish
 
     - name: Generate build provenance
-      uses: actions/attest-build-provenance@v1
+      uses: actions/attest-build-provenance@v3
       with:
         subject-path: './publish/**'
 
@@ -88,7 +88,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Checkout target repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: CollapseLauncher/CollapseLauncher-ReleaseRepo
         path: ./target-repo
@@ -104,7 +104,7 @@ jobs:
         Copy-Item -Path ./publish/*.zip -Destination ./target-repo/inhouse-plugin/wuwa/build/
 
     - name: Create Pull Request in Release Repo
-      uses: peter-evans/create-pull-request@v7
+      uses: peter-evans/create-pull-request@v8
       with:
         token: ${{ secrets.RELEASE_REPO_TOKEN }}
         path: ./target-repo

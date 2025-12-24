@@ -290,30 +290,79 @@ internal partial class WuwaGameManager : GameManagerBase
         string filePath = Path.Combine(CurrentGameInstallPath, "app-game-config.json");
         FileInfo fileInfo = new(filePath);
 
-        if (!fileInfo.Exists)
+        if (fileInfo.Exists)
         {
-            SharedStatic.InstanceLogger.LogWarning(
-				"[WuwaGameManager::LoadConfig] File app-game-config.json doesn't exist on dir: {Dir}",
-                CurrentGameInstallPath);
-            return;
-        }
-
-        try
-        {
-            using FileStream fileStream = fileInfo.OpenRead();
+            try
+            {
+                using FileStream fileStream = fileInfo.OpenRead();
 #if USELIGHTWEIGHTJSONPARSER
             CurrentGameConfig = WuwaGameLauncherConfig.ParseFrom(fileStream);
 #else
             CurrentGameConfigNode = JsonNode.Parse(fileStream) as JsonObject ?? new JsonObject();
 #endif
-            SharedStatic.InstanceLogger.LogTrace(
-				"[WuwaGameManager::LoadConfig] Loaded app-game-config.json from directory: {Dir}",
+                SharedStatic.InstanceLogger.LogTrace(
+                    "[WuwaGameManager::LoadConfig] Loaded app-game-config.json from directory: {Dir}",
+                    CurrentGameInstallPath);
+                return;
+            }
+            catch (Exception ex)
+            {
+                SharedStatic.InstanceLogger.LogError(
+                    "[WuwaGameManager::LoadConfig] Cannot load app-game-config.json! Reason: {Exception}", ex);
+                // fallthrough: attempt recovery/write if possible
+            }
+        }
+        else
+        {
+            SharedStatic.InstanceLogger.LogWarning(
+                "[WuwaGameManager::LoadConfig] File app-game-config.json doesn't exist on dir: {Dir}",
                 CurrentGameInstallPath);
-		}
+        }
+
+        // If the file is missing (or failed to parse), attempt to detect an existing install by executable
+        // and persist a config so manual-locate flow behaves like installer.
+        try
+        {
+            string exePath = Path.Combine(CurrentGameInstallPath, CurrentGameExecutableByPreset);
+            if (File.Exists(exePath))
+            {
+                SharedStatic.InstanceLogger.LogInformation(
+                    "[WuwaGameManager::LoadConfig] Found executable at {Exe}. Attempting to initialize API and persist app-game-config.json.",
+                    exePath);
+
+                try
+                {
+                    // Ensure API metadata available for SaveConfig (best-effort; swallow errors)
+                    InitAsyncInner(true, CancellationToken.None).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    SharedStatic.InstanceLogger.LogWarning(
+                        "[WuwaGameManager::LoadConfig] InitAsyncInner failed (continuing): {Err}", ex.Message);
+                }
+
+                try
+                {
+                    SaveConfig();
+                    SharedStatic.InstanceLogger.LogInformation(
+                        "[WuwaGameManager::LoadConfig] Persisted app-game-config.json for manual-located installation.");
+                }
+                catch (Exception ex)
+                {
+                    SharedStatic.InstanceLogger.LogWarning(
+                        "[WuwaGameManager::LoadConfig] Failed to persist app-game-config.json: {Err}", ex.Message);
+                }
+            }
+            else
+            {
+                SharedStatic.InstanceLogger.LogTrace(
+                    "[WuwaGameManager::LoadConfig] No executable found at {Exe}; skipping auto-save.", exePath);
+            }
+        }
         catch (Exception ex)
         {
-            SharedStatic.InstanceLogger.LogError(
-				"[WuwaGameManager::LoadConfig] Cannot load app-game-config.json! Reason: {Exception}", ex);
+            SharedStatic.InstanceLogger.LogWarning(
+                "[WuwaGameManager::LoadConfig] Recovery attempt failed: {Err}", ex.Message);
         }
     }
 
@@ -332,12 +381,45 @@ internal partial class WuwaGameManager : GameManagerBase
             ApiGameConfigResponse?.KeyFileCheckList?[2] ??
             Path.GetFileNameWithoutExtension(CurrentGameExecutableByPreset));
 #endif
+
         if (CurrentGameVersion == GameVersion.Empty)
         {
             SharedStatic.InstanceLogger.LogWarning(
                 "[WuwaGameManager::SaveConfig] Current version returns 0.0.0! Overwrite the version to current provided version by API, {VersionApi}",
                 ApiGameVersion);
             CurrentGameVersion = ApiGameVersion;
+        }
+
+        // Persist to disk (write app-game-config.json)
+        try
+        {
+            string configPath = Path.Combine(CurrentGameInstallPath, "app-game-config.json");
+            Directory.CreateDirectory(CurrentGameInstallPath);
+
+            var writerOptions = new JsonWriterOptions
+            {
+                Indented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+
+#if !USELIGHTWEIGHTJSONPARSER
+            using (var fs = new FileStream(configPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var writer = new Utf8JsonWriter(fs, writerOptions))
+            {
+                // JsonObject supports WriteTo(Utf8JsonWriter)
+                CurrentGameConfigNode.WriteTo(writer);
+                writer.Flush();
+            }
+            SharedStatic.InstanceLogger.LogInformation("[WuwaGameManager::SaveConfig] Wrote app-game-config.json to {Path}", configPath);
+#else
+            // If lightweight parser is used, add equivalent persistence here
+            SharedStatic.InstanceLogger.LogWarning("[WuwaGameManager::SaveConfig] Lightweight JSON parser enabled: persistence not implemented.");
+#endif
+        }
+        catch (Exception ex)
+        {
+            SharedStatic.InstanceLogger.LogWarning(
+                "[WuwaGameManager::SaveConfig] Failed to write app-game-config.json: {Exception}", ex);
         }
     }
 }

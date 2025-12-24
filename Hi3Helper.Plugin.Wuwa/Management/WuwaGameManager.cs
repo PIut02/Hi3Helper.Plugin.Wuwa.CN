@@ -115,13 +115,29 @@ internal partial class WuwaGameManager : GameManagerBase
                 Path.Combine(CurrentGameInstallPath!,
 					"Client\\Binaries\\Win64\\ThirdParty\\KrPcSdk_Global\\KRSDKRes\\KRSDK.bin"));
             string executablePath5 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
-                Path.Combine(CurrentGameInstallPath!,
-                    "app-game-config.json"));
+                Path.Combine(CurrentGameInstallPath!, "app-game-config.json"));
             return File.Exists(executablePath1) &&
                            File.Exists(executablePath2) &&
                            File.Exists(executablePath3) &&
                            File.Exists(executablePath4) &&
                            File.Exists(executablePath5);
+        }
+    }
+
+    protected bool IsSteamInstall
+    {
+        get
+        {
+            string executablePath1 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+                "Client\\Binaries\\Win64\\ThirdParty\\KrPcSdk_Global\\installscript.vdf");
+            string executablePath2 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+                "\\Client\\Binaries\\Win64\\AntiCheatExpert\\SGuard\\x64\\SGuard64.exe");
+            string executablePath3 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+                "\\Client\\Binaries\\Win64\\ThirdParty\\KrPcSdk_Global\\KRSDK.dll");
+
+            return File.Exists(executablePath1) &&
+                            File.Exists(executablePath2) &&
+                            File.Exists(executablePath3);
         }
     }
 

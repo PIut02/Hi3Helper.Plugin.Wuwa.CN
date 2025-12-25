@@ -24,4 +24,8 @@ public class WuwaApiResponseGameConfigRef
 
     [JsonPropertyName("baseUrl")] // Mapping: root -> default -> config -> baseUrl
     public string? BaseUrl { get; set; }
+
+    [JsonPropertyName("patchConfig")] // Mapping: root -> default -> config -> patchConfig
+	public WuwaApiResponseGameConfigRef[]? PatchConfig
+    { get; set; }
 }

@@ -1,6 +1,8 @@
 using Hi3Helper.Plugin.Core.Management.PresetConfig;
 using Hi3Helper.Plugin.Core.Utility;
 using Hi3Helper.Plugin.Wuwa.Management;
+using Hi3Helper.Plugin.Wuwa.Management.PresetConfig;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -8,8 +10,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using Hi3Helper.Plugin.Wuwa.Management.PresetConfig;
 
 namespace Hi3Helper.Plugin.Wuwa;
 
@@ -22,6 +22,16 @@ public partial class Exports
 
 		async Task<bool> Impl()
 		{
+			if (!await TryInitializeEpicLauncher(context, token))
+			{
+				return false;
+			}
+
+			if (!await TryInitializeSteamLauncher(context, token))
+			{
+				return false;
+			}
+
 			if (!TryGetStartingProcessFromContext(context, startArgument, out Process? process))
 			{
 				return false;
@@ -38,7 +48,7 @@ public partial class Exports
 				}
 				catch (Exception e)
 				{
-					InstanceLogger.LogError(e, "[DNAbyss::LaunchGameFromGameManagerCoreAsync()] An error has occurred while trying to set process priority, Ignoring!");
+					InstanceLogger.LogError(e, "[Wuwa::LaunchGameFromGameManagerCoreAsync()] An error has occurred while trying to set process priority, Ignoring!");
 				}
 
 				CancellationTokenSource gameLogReaderCts = new();
@@ -51,6 +61,8 @@ public partial class Exports
 
 				// Run game log reader (Create a new thread)
 				_ = ReadGameLog(context, coopCts.Token);
+
+				_ = TryKillEpicLauncher(context, token);
 
 				// ReSharper disable once PossiblyMistakenUseOfCancellationToken
 				await process.WaitForExitAsync(token);
@@ -78,8 +90,8 @@ public partial class Exports
 
 		using Process? process = FindExecutableProcess(startingExecutablePath);
 		using Process? gameProcess = FindExecutableProcess(gameExecutablePath);
-		isGameRunning = process != null || gameProcess != null;
-		gameStartTime = process?.StartTime ?? gameProcess?.StartTime ?? default;
+		isGameRunning = process != null || gameProcess != null || IsEpicLoading || IsSteamLoading;
+		gameStartTime = process?.StartTime ?? gameProcess?.StartTime ?? EpicStartTime ?? SteamStartTime ?? default;
 
 		return true;
 	}
@@ -91,6 +103,16 @@ public partial class Exports
 
 		async Task<bool> Impl()
 		{
+			while (IsEpicLoading)
+			{
+				await Task.Delay(200, token);
+			}
+
+			while(IsSteamLoading)
+			{
+				await Task.Delay(200, token);
+			}
+
 			string? startingExecutablePath = null;
 			string? gameExecutablePath = null;
 			if (!TryGetStartingExecutablePath(context, out startingExecutablePath)

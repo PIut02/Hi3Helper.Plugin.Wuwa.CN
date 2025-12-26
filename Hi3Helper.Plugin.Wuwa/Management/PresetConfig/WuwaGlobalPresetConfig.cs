@@ -15,12 +15,12 @@ namespace Hi3Helper.Plugin.Wuwa.Management.PresetConfig;
 [GeneratedComClass]
 public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
 {
-    private const string ApiResponseUrl = "https://prod-alicdn-gamestarter.kurogame.com/";
-    private const string ApiResponseAssetUrl = "https://pcdownload-huoshan.aki-game.net/";
-    private const string CurrentTag = "JFJWUA";
-    private const string AuthenticationHash = "VlNTU1c8DAEsKzslESUCDRIQAiomLA4WKBEMIAABOQgyMSEgVAA";
-    private const string Hash1 = "DBAwDDtQUDsiOi4bIFFUUVUnNzoaARURLlQVKSEyFAo";
-    private const string ExecutableName = "Wuthering Waves.exe";
+    protected const string ApiResponseUrl = "https://prod-alicdn-gamestarter.kurogame.com/";
+    protected const string ApiResponseAssetUrl = "https://pcdownload-huoshan.aki-game.net/";
+    protected const string CurrentTag = "JFJWUA";
+    protected const string AuthenticationHash = "VlNTU1c8DAEsKzslESUCDRIQAiomLA4WKBEMIAABOQgyMSEgVAA";
+    protected const string Hash1 = "DBAwDDtQUDsiOi4bIFFUUVUnNzoaARURLlQVKSEyFAo";
+    protected const string ExecutableName = "Wuthering Waves.exe";
     private const string EngineExecutableName = "Client-Win64-Shipping.exe";
 	private const string VendorName = "Kuro Games";
 

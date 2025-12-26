@@ -13,7 +13,7 @@ namespace Hi3Helper.Plugin.Wuwa;
 [GeneratedComClass]
 public partial class WuwaPlugin : PluginBase
 {
-    private static readonly IPluginPresetConfig[] PresetConfigInstances = [new WuwaGlobalPresetConfig()];
+    private static readonly IPluginPresetConfig[] PresetConfigInstances = [new WuwaGlobalPresetConfig(), new WuwaSteamPresetConfig()];
     private static DateTime _pluginCreationDate = new(2025, 07, 20, 05, 06, 0, DateTimeKind.Utc);
     private static IPluginSelfUpdate? _selfUpdaterInstance;
 

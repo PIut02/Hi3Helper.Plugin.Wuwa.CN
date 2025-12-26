@@ -22,6 +22,11 @@ public partial class Exports
 
 		async Task<bool> Impl()
 		{
+			if (!await TryInitializeSteamLauncher(context, token))
+			{
+				return false;
+			}
+
 			if (!TryGetStartingProcessFromContext(context, startArgument, out Process? process))
 			{
 				return false;

@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 namespace Hi3Helper.Plugin.Wuwa;
 public partial class Exports
 {
-	private const string SteamLaunchUri = "steam://run/3513350"; // 3513350 is Wuthering Waves' Steam AppID
+	private const string SteamLaunchUri = "steam://nav/games/details/3513350"; // Wuthering Waves Steam AppID, game launches through Collapse and is picked up by Steam
 	private bool IsSteamLoading = false;
 	private DateTime? SteamStartTime = null;
 	private Process[] SteamProcesses = [];
@@ -48,10 +48,12 @@ public partial class Exports
 		int delay = 0;
 		while (SteamProcesses.Length == 0 && delay < 15000)
 		{
-			SteamProcesses = Process.GetProcessesByName("steamwebhelper");
-
-			await Task.Delay(200, token);
-			delay += 200;
+			SteamProcesses = Process.GetProcessesByName("Steam");
+#if DEBUG
+			SharedStatic.InstanceLogger.LogDebug($"Searching for Steam process... Found {SteamProcesses.Length} processes.");
+#endif
+			await Task.Delay(10000, token); // Yes this is required because Steam is slow to start
+			delay += 10000;
 		}
 
 		if (SteamProcesses.Length > 0)
@@ -59,9 +61,14 @@ public partial class Exports
 			foreach (Process p1 in SteamProcesses)
 			{
 				p1.Refresh();
+#if DEBUG
+				SharedStatic.InstanceLogger.LogDebug($"Checking Steam process ID {p1.Id} for main window handle...");
+#endif
 				if (p1.MainWindowHandle != IntPtr.Zero)
 				{
+#if DEBUG
 					SharedStatic.InstanceLogger.LogDebug($"Found Steam main window handle: {p1.MainWindowHandle}");
+#endif
 					while (!WaitForMainHandle(p1, token).Result)
 					{
 						await Task.Delay(200, token);
@@ -84,9 +91,10 @@ public partial class Exports
 			return true;
 		}
 
-
 		IsSteamLoading = false;
+#if DEBUG
 		SharedStatic.InstanceLogger.LogDebug($"Steam should be done loading by now...");
+#endif
 
 		return true;
 	}

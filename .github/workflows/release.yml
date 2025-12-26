@@ -72,7 +72,7 @@ jobs:
       with:
         config: cliff.toml
         # (Implicitly grabs all "unreleased" changes since v0.4.0)
-        args: --tag v${{ inputs.version }} --strip header
+        args: --unreleased --strip header
       id: git-cliff
 
     # --- STEP 5: Create GitHub Release ---

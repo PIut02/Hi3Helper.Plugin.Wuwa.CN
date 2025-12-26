@@ -88,8 +88,6 @@ public partial class Exports
 		IsSteamLoading = false;
 		SharedStatic.InstanceLogger.LogDebug($"Steam should be done loading by now...");
 
-		_ = WaitRunningGameCoreAsync(context, token);
-
 		return true;
 	}
 }

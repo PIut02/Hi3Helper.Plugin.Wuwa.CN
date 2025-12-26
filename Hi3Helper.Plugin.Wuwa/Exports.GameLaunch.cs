@@ -10,7 +10,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Hi3Helper.Plugin.Wuwa.Management.PresetConfig;
-using Hi3Helper.Plugin.Core;
 
 namespace Hi3Helper.Plugin.Wuwa;
 
@@ -23,22 +22,7 @@ public partial class Exports
 
 		async Task<bool> Impl()
 		{
-			if (!await TryInitializeSteamLauncher(context, token))
-			{
-				return false;
-			}
-
-			if (!await TryInitializeEpicLauncher(context, token))
-			{
-				return false;
-			}
-
 			if (!TryGetStartingProcessFromContext(context, startArgument, out Process? process))
-			{
-				return false;
-			}
-
-			if (!TryGetGameProcessFromContext(context, out Process? gameProcess))
 			{
 				return false;
 			}
@@ -54,19 +38,25 @@ public partial class Exports
 				}
 				catch (Exception e)
 				{
-					InstanceLogger.LogError(e, "[Wuwa::LaunchGameFromGameManagerCoreAsync()] An error has occurred while trying to set process priority, Ignoring!");
+					InstanceLogger.LogError(e, "[DNAbyss::LaunchGameFromGameManagerCoreAsync()] An error has occurred while trying to set process priority, Ignoring!");
 				}
 
 				CancellationTokenSource gameLogReaderCts = new();
 				CancellationTokenSource coopCts = CancellationTokenSource.CreateLinkedTokenSource(token, gameLogReaderCts.Token);
 
+				if (!TryGetGameProcessFromContext(context, out Process? gameProcess))
+				{
+					return false;
+				}
+
 				// Run game log reader (Create a new thread)
-				_ = ReadGameLog(context, gameProcess, coopCts.Token);
+				_ = ReadGameLog(context, coopCts.Token);
 
 				// ReSharper disable once PossiblyMistakenUseOfCancellationToken
 				await process.WaitForExitAsync(token);
 				await gameLogReaderCts.CancelAsync();
 
+				gameProcess.Dispose();
 				return true;
 			}
 		}
@@ -86,10 +76,10 @@ public partial class Exports
 			return true;
 		}
 
-		using Process? process = startingExecutablePath != null ? FindExecutableProcess(startingExecutablePath) : null;
-		using Process? gameProcess = gameExecutablePath != null ? FindExecutableProcess(gameExecutablePath) : null;
+		using Process? process = FindExecutableProcess(startingExecutablePath);
+		using Process? gameProcess = FindExecutableProcess(gameExecutablePath);
 		isGameRunning = process != null || gameProcess != null;
-		gameStartTime = process?.StartTime ?? gameProcess?.StartTime ?? SteamStartTime ?? EpicStartTime ?? default;
+		gameStartTime = process?.StartTime ?? gameProcess?.StartTime ?? default;
 
 		return true;
 	}
@@ -101,23 +91,16 @@ public partial class Exports
 
 		async Task<bool> Impl()
 		{
-			while (IsSteamLoading)
-			{
-				SharedStatic.InstanceLogger.LogDebug("[Wuwa::WaitRunningGameCoreAsync()] Waiting 200ms because Steam is loading...");
-				await Task.Delay(200, token);
-			}
-
-			while (IsEpicLoading)
-			{
-				SharedStatic.InstanceLogger.LogDebug("[Wuwa::WaitRunningGameCoreAsync()] Waiting 200ms because Epic is loading...");
-				await Task.Delay(200, token);
-			}
-
 			string? startingExecutablePath = null;
 			string? gameExecutablePath = null;
+			if (!TryGetStartingExecutablePath(context, out startingExecutablePath)
+				&& !TryGetStartingExecutablePath(context, out gameExecutablePath))
+			{
+				return true;
+			}
 
-			using Process? process = startingExecutablePath != null ? FindExecutableProcess(startingExecutablePath) : null;
-			using Process? gameProcess = gameExecutablePath != null ? FindExecutableProcess(gameExecutablePath) : null;
+			using Process? process = FindExecutableProcess(startingExecutablePath);
+			using Process? gameProcess = FindExecutableProcess(gameExecutablePath);
 
 			if (gameProcess != null)
 				await gameProcess.WaitForExitAsync(token);
@@ -151,9 +134,9 @@ public partial class Exports
 		return true;
 	}
 
-	private static Process? FindExecutableProcess(string executablePath)
+	private static Process? FindExecutableProcess(string? executablePath)
 	{
-		if (executablePath is null) return null;
+		if (executablePath == null) return null;
 
 		ReadOnlySpan<char> executableDirPath = Path.GetDirectoryName(executablePath.AsSpan());
 		string executableName = Path.GetFileNameWithoutExtension(executablePath);
@@ -186,12 +169,12 @@ public partial class Exports
 	private static bool TryGetGameExecutablePath(GameManagerExtension.RunGameFromGameManagerContext context, [NotNullWhen(true)] out string? gameExecutablePath)
 	{
 		gameExecutablePath = null;
-		if (context is not { GameManager: WuwaGameManager wuwaGameManager, PresetConfig: WuwaPresetConfig presetConfig })
+		if (context is not { GameManager: WuwaGameManager dnaGameManager, PresetConfig: PluginPresetConfigBase presetConfig })
 		{
 			return false;
 		}
 
-		wuwaGameManager.GetGamePath(out string? gamePath);
+		dnaGameManager.GetGamePath(out string? gamePath);
 		presetConfig.comGet_GameExecutableName(out string executablePath);
 
 		gamePath?.NormalizePathInplace();
@@ -226,12 +209,12 @@ public partial class Exports
 	private static bool TryGetStartingExecutablePath(GameManagerExtension.RunGameFromGameManagerContext context, [NotNullWhen(true)] out string? startingExecutablePath)
 	{
 		startingExecutablePath = null;
-		if (context is not { GameManager: WuwaGameManager wuwaGameManager, PresetConfig: WuwaPresetConfig presetConfig })
+		if (context is not { GameManager: WuwaGameManager dnaGameManager, PresetConfig: WuwaPresetConfig presetConfig })
 		{
 			return false;
 		}
 
-		wuwaGameManager.GetGamePath(out string? gamePath);
+		dnaGameManager.GetGamePath(out string? gamePath);
 		string? executablePath = presetConfig?.StartExecutableName;
 
 		gamePath?.NormalizePathInplace();
@@ -266,7 +249,7 @@ public partial class Exports
 		return true;
 	}
 
-	private static async Task ReadGameLog(GameManagerExtension.RunGameFromGameManagerContext context, Process process, CancellationToken token)
+	private static async Task ReadGameLog(GameManagerExtension.RunGameFromGameManagerContext context, CancellationToken token)
 	{
 		if (context is not { PresetConfig: PluginPresetConfigBase presetConfig })
 		{
@@ -283,14 +266,7 @@ public partial class Exports
 		}
 
 		string gameLogPath = Path.Combine(gameAppDataPath, gameLogFileName);
-		InstanceLogger.LogDebug("Log: {Log}", gameLogPath);
-
-		// Make artificial delay and read the game log if the window is already spawned.
-		while (!token.IsCancellationRequested &&
-			   process.MainWindowHandle == nint.Zero)
-		{
-			await Task.Delay(250, token);
-		}
+		await Task.Delay(250, token);
 
 		int retry = 5;
 		while (!File.Exists(gameLogPath) && retry >= 0)

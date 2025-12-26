@@ -96,33 +96,65 @@ internal partial class WuwaGameManager : GameManagerBase
         set;
     }
 
-    protected override bool HasPreload => ApiPreloadGameVersion != GameVersion.Empty && !HasUpdate;
-    protected override bool HasUpdate => IsInstalled && ApiGameVersion != CurrentGameVersion;
+	/**
+     * Currently, Kuro only serves their KRPDiff files on transient versions (e.g. 3.0.1)
+     * and preloads. Major versions (2.8, 3.0, 3.1, etc.) have the full files, so we need to
+     * 1. Check current version, if there's an update, grab the diff (can be major -> major, minor -> major, etc.)
+     * 2. Parse the fromFolder JSON tag, which will tell us where to grab the new diffs from
+     * 3. Parse the JSON response and only download files that end if `.krpdiff` extension
+     * 3-1. krpdiff is using HDiff19 with ZSTD & Fadler64
+     * 4. Once all krpdiff files are downloaded (in chunks or otherwise):
+     * 4-1. Parse deleteFiles field and remove those files from the current install
+     * 4-2. Parse groupInfos field and apply the krpdiff file:
+     * 4-2-1. Parse `srcFiles` and get `dest` field, which is the file on which krpdiff should be ran
+     * 4-2-2. Parse `dstFiles` and get `dest` field, which is what the file should be called once hdiff has ran
+     * 4-2-3. As validation, we can run MD5 compute on the file before and after and compare it with MD5 hash in both JSON fields
+     * 4-3. Repeat 4-2 for all `krpdiff` files.
+     * 4-4. For validation, we can compute the MD5 hash and compare it with the file list in the JSON response (md5 field)
+     * 5. Delete all krpdiff files and mark game as installed/updated.
+     * 
+     * Until the above is done, HasPreload and HasUpdate is disabled, so that the game is marked as always updated & no preloads.
+     * 
+     * For preloads, the procedure is similar, we can just download the KRPDiff (steps 1 to 3) files and keep them until we notice that the Preload
+     * (they call it predownload) field in default -> config no longer exists, then we can notify the user and have them click the "Update Game"
+     * button, which will run steps 4 & 5.
+     */
+	//protected override bool HasPreload => ApiPreloadGameVersion != GameVersion.Empty && !HasUpdate;
+	//protected override bool HasUpdate => IsInstalled && ApiGameVersion != CurrentGameVersion;
+	protected override bool HasPreload => false;
+    protected override bool HasUpdate => false;
 
     protected override bool IsInstalled
     {
         get
         {
-            string executablePath1 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
-                CurrentGameExecutableByPreset);
-            string executablePath2 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
-                Path.Combine(CurrentGameInstallPath!,
-                    "Client\\Binaries\\Win64\\Client-Win64-ShippingBase.dll"));
-            string executablePath3 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
-                Path.Combine(CurrentGameInstallPath!,
-				    "Client\\Binaries\\Win64\\Client-Win64-Shipping.exe"));
-			string executablePath4 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
-                Path.Combine(CurrentGameInstallPath!,
-					"Client\\Binaries\\Win64\\ThirdParty\\KrPcSdk_Global\\KRSDKRes\\KRSDK.bin"));
-            string executablePath5 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
-                Path.Combine(CurrentGameInstallPath!, "app-game-config.json"));
-            return File.Exists(executablePath1) &&
-                           File.Exists(executablePath2) &&
-                           File.Exists(executablePath3) &&
-                           File.Exists(executablePath4) &&
-                           File.Exists(executablePath5);
-        }
+            if (string.IsNullOrEmpty(CurrentGameInstallPath))
+                return false;
+            return IsStandaloneInstall || IsSteamInstall || IsEpicInstall;
+		}
     }
+
+    protected bool IsStandaloneInstall
+    {
+		get
+		{
+			string executablePath1 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+				Path.Combine(CurrentGameInstallPath!,
+					"Client\\Binaries\\Win64\\Client-Win64-ShippingBase.dll"));
+			string executablePath2 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+				Path.Combine(CurrentGameInstallPath!,
+					"Client\\Binaries\\Win64\\Client-Win64-Shipping.exe"));
+			string executablePath3 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+				Path.Combine(CurrentGameInstallPath!,
+					"Client\\Binaries\\Win64\\ThirdParty\\KrPcSdk_Global\\KRSDKRes\\KRSDK.bin"));
+			string executablePath4 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+				Path.Combine(CurrentGameInstallPath!, "app-game-config.json"));
+			return File.Exists(executablePath1) &&
+						   File.Exists(executablePath2) &&
+						   File.Exists(executablePath3) &&
+						   File.Exists(executablePath4);
+		}
+	}
 
     protected bool IsSteamInstall
     {
@@ -138,6 +170,14 @@ internal partial class WuwaGameManager : GameManagerBase
             return File.Exists(executablePath1) &&
                             File.Exists(executablePath2) &&
                             File.Exists(executablePath3);
+        }
+    }
+
+    protected bool IsEpicInstall
+    {
+        get
+        {
+            return false; // TODO
         }
     }
 
@@ -382,6 +422,22 @@ internal partial class WuwaGameManager : GameManagerBase
             Path.GetFileNameWithoutExtension(CurrentGameExecutableByPreset));
 #endif
 
+        string installType;
+        try
+        {
+            if (IsStandaloneInstall) installType = "standalone";
+            else if (IsSteamInstall) installType = "steam";
+            else if (IsEpicInstall) installType = "epic";
+            else installType = "unknown";
+        } catch
+        {
+            installType = "unknown";
+        }
+        CurrentGameConfigNode["InstallType"] = installType;
+#if !USELIGHTWEIGHTJSONPARSER
+        CurrentGameConfigNode.SetConfigValueIfEmpty("installType", installType);
+#endif
+
         if (CurrentGameVersion == GameVersion.Empty)
         {
             SharedStatic.InstanceLogger.LogWarning(
@@ -423,17 +479,18 @@ internal partial class WuwaGameManager : GameManagerBase
         }
     }
 
-    public void LogVersions()
+    internal string GetInstallType()
     {
         try
         {
-            GameVersion apiVer = ApiGameVersion;
-            GameVersion curVer = CurrentGameVersion;
-            SharedStatic.InstanceLogger.LogInformation("[WuwaGameManager::LogVersions] ApiGameVersion={Api} CurrentGameVersion={Current}", apiVer, curVer);
+            if (IsStandaloneInstall) return "standalone";
+            if (IsSteamInstall) return "steam";
+            if (IsEpicInstall) return "epic";
+        } 
+        catch 
+        { 
+            // ignore
         }
-        catch (Exception ex)
-        {
-            SharedStatic.InstanceLogger.LogWarning("[WuwaGameManager::LogVersions] Failed to log versions: {Err}", ex.Message);
-        }
+        return "unknown";
     }
 }

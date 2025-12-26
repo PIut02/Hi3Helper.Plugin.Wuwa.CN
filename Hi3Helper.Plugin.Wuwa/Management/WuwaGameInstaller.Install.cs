@@ -492,7 +492,11 @@ namespace Hi3Helper.Plugin.Wuwa.Management
                             {
                                 var idxName = new Uri(_owner.GameAssetBaseUrl ?? string.Empty, UriKind.Absolute).AbsolutePath;
                                 writer.WriteString("indexFile", Path.GetFileName(idxName));
-                            }
+                                string installType = "unknown";
+                                if (_owner.GameManager is WuwaGameManager gm)
+                                    installType = gm.GetInstallType();
+                                writer.WriteString("InstallType", installType);
+							}
                             catch { /* ignore */ }
                             writer.WriteEndObject();
                             await writer.FlushAsync(token);

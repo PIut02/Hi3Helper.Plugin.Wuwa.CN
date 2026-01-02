@@ -176,9 +176,12 @@ internal partial class WuwaGameManager : GameManagerBase
     protected bool IsEpicInstall
     {
         get
-        {
-            return false; // TODO
-        }
+		{ // This is the ONLY difference between EGS and Standalone install
+			string executablePath1 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
+                "Client\\Binaries\\Win64\\ThirdParty\\KrPcSdk_Global\\EOSSDK-Win64-Shipping.dll");
+
+            return File.Exists(executablePath1);
+		}
     }
 
     public override void Dispose()

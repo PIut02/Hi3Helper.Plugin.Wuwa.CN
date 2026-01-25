@@ -57,7 +57,7 @@ jobs:
       run: dotnet build --configuration Release Hi3Helper.Plugin.Wuwa.CN.sln --no-restore
 
     - name: Publish with selected profile
-      run: dotnet publish Hi3Helper.Plugin.Wuwa/Hi3Helper.Plugin.Wuwa.CN.csproj --configuration Release --runtime win-x64 /p:PublishProfile=$PUBLISH_PROFILE -o ./publish
+      run: dotnet publish Hi3Helper.Plugin.Wuwa.CN/Hi3Helper.Plugin.Wuwa.CN.csproj --configuration Release --runtime win-x64 /p:PublishProfile=$PUBLISH_PROFILE -o ./publish
 
     - name: Generate build provenance
       uses: actions/attest-build-provenance@v1

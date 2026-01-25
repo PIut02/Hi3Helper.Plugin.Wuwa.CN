@@ -51,13 +51,13 @@ jobs:
         echo "PUBLISH_PROFILE=$profile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Restore dependencies
-      run: dotnet restore Hi3Helper.Plugin.Wuwa.sln
+      run: dotnet restore Hi3Helper.Plugin.Wuwa.CN.sln
 
     - name: Build solution
-      run: dotnet build --configuration Release Hi3Helper.Plugin.Wuwa.sln --no-restore
+      run: dotnet build --configuration Release Hi3Helper.Plugin.Wuwa.CN.sln --no-restore
 
     - name: Publish with selected profile
-      run: dotnet publish Hi3Helper.Plugin.Wuwa/Hi3Helper.Plugin.Wuwa.csproj --configuration Release --runtime win-x64 /p:PublishProfile=$PUBLISH_PROFILE -o ./publish
+      run: dotnet publish Hi3Helper.Plugin.Wuwa/Hi3Helper.Plugin.Wuwa.CN.csproj --configuration Release --runtime win-x64 /p:PublishProfile=$PUBLISH_PROFILE -o ./publish
 
     - name: Generate build provenance
       uses: actions/attest-build-provenance@v1

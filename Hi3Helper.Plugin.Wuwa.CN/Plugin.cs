@@ -19,7 +19,6 @@ public partial class WuwaPlugin : PluginBase
     ];
 
     private static DateTime _pluginCreationDate = new(2025, 07, 20, 05, 06, 0, DateTimeKind.Utc);
-    private static IPluginSelfUpdate? _selfUpdaterInstance;
 
     private string? _getNotificationPosterUrl;
 
@@ -65,7 +64,7 @@ public partial class WuwaPlugin : PluginBase
 
     public override void GetPluginSelfUpdater(out IPluginSelfUpdate selfUpdate)
     {
-        selfUpdate = _selfUpdaterInstance ??= new WuwaPluginSelfUpdate();
+        selfUpdate = null!;
     }
 
     public override void GetPluginAppIconUrl(out string result)

@@ -25,7 +25,7 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
     private const string EngineExecutableName = "Client-Win64-Shipping.exe";
     private const string VendorName = "Kuro Games";
 
-    [field: AllowNull] [field: MaybeNull] public override string GameName => field ??= "Wuthering Waves";
+    [field: AllowNull] [field: MaybeNull] public override string GameName => field ??= "鸣潮";
 
     [field: AllowNull]
     [field: MaybeNull]

@@ -18,9 +18,9 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
     
     [field: AllowNull] [field: MaybeNull] public override string ProfileName => field ??= "WuwaCn";
 
-    [field: AllowNull] [field: MaybeNull] public override string ZoneName => field ??= "China";
+    [field: AllowNull] [field: MaybeNull] public override string ZoneName => field ??= "中国大陆";
 
-    [field: AllowNull] [field: MaybeNull] public override string ZoneFullName => field ??= "Wuthering Waves (China)";
+    [field: AllowNull] [field: MaybeNull] public override string ZoneFullName => field ??= "鸣潮 (CN)";
     
     public override ILauncherApiMedia? LauncherApiMedia
     {

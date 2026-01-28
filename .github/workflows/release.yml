@@ -90,7 +90,7 @@ jobs:
     - name: Checkout target repo
       uses: actions/checkout@v6
       with:
-        repository: CollapseLauncher/CollapseLauncher-ReleaseRepo
+        repository: PIut02/Hi3Helper.Plugin.Wuwa.CN
         path: ./target-repo
         token: ${{ secrets.RELEASE_REPO_TOKEN }}
         fetch-depth: 0

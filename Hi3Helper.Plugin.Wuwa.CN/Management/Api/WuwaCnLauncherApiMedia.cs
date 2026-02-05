@@ -98,7 +98,8 @@ internal partial class WuwaCnLauncherApiMedia : LauncherApiMediaBase
         }
 
         // URL: /launcher/{Key}/{ID}/background/{Hash}/zh-Hans.json
-        var mediaUrl = $"{ApiResponseBaseUrl}launcher/{finalAuth}/{finalTag}/background/{backgroundHash}/zh-Hans.json";
+        long timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var mediaUrl = $"{ApiResponseBaseUrl}launcher/{finalAuth}/{finalTag}/background/{backgroundHash}/zh-Hans.json?_t={timestamp}";
 
         SharedStatic.InstanceLogger.LogDebug($"[WuwaCnLauncherApiMedia] Requesting Media Config: {mediaUrl}");
 

@@ -50,7 +50,7 @@ internal partial class WuwaCnLauncherApiMedia : LauncherApiMediaBase
     protected override HttpClient? ApiResponseHttpClient
     {
         get => field ??= new PluginHttpClientBuilder()
-            .SetAllowedDecompression(DecompressionMethods.None)
+            .SetAllowedDecompression(DecompressionMethods.All)
             .AllowCookies()
             .AllowRedirections()
             .AllowUntrustedCert()

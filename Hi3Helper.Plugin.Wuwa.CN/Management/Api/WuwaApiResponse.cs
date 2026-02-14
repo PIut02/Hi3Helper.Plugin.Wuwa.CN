@@ -1,5 +1,5 @@
-﻿using System.Text.Json.Serialization;
-
+﻿using System.Collections.Generic;
+using System.Text.Json.Serialization;
 // ReSharper disable IdentifierTypo
 
 namespace Hi3Helper.Plugin.Wuwa.CN.Management.Api;
@@ -8,4 +8,8 @@ namespace Hi3Helper.Plugin.Wuwa.CN.Management.Api;
 [JsonSerializable(typeof(WuwaApiResponseNews))]
 [JsonSerializable(typeof(WuwaApiResponseSocial))]
 [JsonSerializable(typeof(WuwaApiResponseGameConfig))]
+[JsonSerializable(typeof(WuwaCnSocialRoot))]
+[JsonSerializable(typeof(WuwaCnSocialEntry))]
+[JsonSerializable(typeof(List<WuwaCnSocialEntry>))]
+
 public partial class WuwaApiResponseContext : JsonSerializerContext;

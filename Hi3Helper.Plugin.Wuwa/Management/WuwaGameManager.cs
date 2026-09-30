@@ -558,14 +558,20 @@ internal partial class WuwaGameManager : GameManagerBase
     protected override Task<string?> FindExistingInstallPathAsyncInner(CancellationToken token)
         => Task.Run(() =>
         {
-            // 1. Legacy behaviour: look around the currently configured installation path.
-            string? foundPath = FindExistingInstallPathAroundConfiguredPath(token);
-            if (!string.IsNullOrEmpty(foundPath))
-                return foundPath;
+            // 1. The host initializes the plugin with the path from its own config.ini, or with a
+            //    default path which does not necessarily contain a game. Validate it before trusting
+            //    it, otherwise a stale/default path would shadow the real installation.
+            if (WuwaInstallationLocator.IsValidGameInstallPath(CurrentGameInstallPath, CurrentGameExecutableByPreset))
+            {
+                SharedStatic.InstanceLogger.LogInformation(
+                    "[WuwaGameManager::FindExistingInstallPath] The configured path is a valid installation: {Path}",
+                    CurrentGameInstallPath);
+                return CurrentGameInstallPath;
+            }
 
             // 2. Consult the installation records written by the official Kuro launcher (and the
-            //    well-known default locations), so that a fresh setup does not need to have its
-            //    game path set by hand before the game can be found.
+            //    well-known default locations), so that a fresh setup does not need to have its game
+            //    path set by hand before the game can be found and written into config.ini.
             foreach (string candidatePath in WuwaInstallationLocator.EnumerateCandidatePaths(GameDirectoryName))
             {
                 if (token.IsCancellationRequested)
@@ -579,6 +585,11 @@ internal partial class WuwaGameManager : GameManagerBase
                     candidatePath);
                 return candidatePath;
             }
+
+            // 3. Last resort: the legacy behaviour of looking around the configured path.
+            string? foundPath = FindExistingInstallPathAroundConfiguredPath(token);
+            if (!string.IsNullOrEmpty(foundPath))
+                return foundPath;
 
             SharedStatic.InstanceLogger.LogDebug(
                 "[WuwaGameManager::FindExistingInstallPath] No existing game installation was found.");

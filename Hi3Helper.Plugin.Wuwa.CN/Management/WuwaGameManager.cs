@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net.Http;
@@ -15,6 +16,7 @@ using Hi3Helper.Plugin.Core.Utility.Json;
 using Hi3Helper.Plugin.Wuwa.CN.Management.Api;
 using Hi3Helper.Plugin.Wuwa.CN.Utils;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 
 // ReSharper disable InconsistentNaming
 // ReSharper disable IdentifierTypo
@@ -25,12 +27,38 @@ namespace Hi3Helper.Plugin.Wuwa.CN.Management;
 [GeneratedComClass]
 internal partial class WuwaGameManager : GameManagerBase
 {
+    /// <summary>
+    /// Default game directory name, mirroring <c>PluginPresetConfigBase.LauncherGameDirectoryName</c>.
+    /// </summary>
+    private const string DefaultLauncherGameDirectoryName = "Wuthering Waves Game";
+
+    /// <summary>
+    /// Root folder name used by the official Kuro launcher on the drive it is installed to.
+    /// </summary>
+    private const string LauncherRootFolderName = "Wuthering Waves";
+
+    /// <summary>
+    /// Registry key holding the installation root recorded by the official Kuro launcher.
+    /// </summary>
+    private const string KuroLauncherRegistryKeyPath = @"Software\kurogame\KRLauncher";
+
+    /// <summary>
+    /// Registry value written by the official Kuro launcher pointing to its own installation folder.
+    /// </summary>
+    private const string KuroLauncherInstallPathValueName = "SingleLauncherInstallPath";
+
+    /// <summary>
+    /// Relative path of the game engine executable, used to validate a game installation candidate.
+    /// </summary>
+    private const string EngineExecutableRelativePath = @"Client\Binaries\Win64\Client-Win64-Shipping.exe";
+
     internal WuwaGameManager(string gameExecutableNameByPreset,
         string apiResponseUrl,
         string apiResponseAssetUrl,
         string authenticationHash,
         string gameTag,
-        string hash1)
+        string hash1,
+        string launcherGameDirectoryName = DefaultLauncherGameDirectoryName)
     {
         CurrentGameExecutableByPreset = gameExecutableNameByPreset;
         ApiResponseUrl = apiResponseUrl;
@@ -38,6 +66,7 @@ internal partial class WuwaGameManager : GameManagerBase
         AuthenticationHash = authenticationHash;
         GameTag = gameTag;
         Hash1 = hash1;
+        LauncherGameDirectoryName = launcherGameDirectoryName;
     }
 
     protected override HttpClient? ApiResponseHttpClient
@@ -59,6 +88,7 @@ internal partial class WuwaGameManager : GameManagerBase
     private string GameTag { get; }
     private string AuthenticationHash { get; }
     private string Hash1 { get; }
+    private string LauncherGameDirectoryName { get; }
 
     private WuwaApiResponseGameConfig? ApiGameConfigResponse { get; set; }
     private string CurrentGameExecutableByPreset { get; }
@@ -273,31 +303,196 @@ internal partial class WuwaGameManager : GameManagerBase
     {
         return Task.Run(() =>
         {
-            if (string.IsNullOrEmpty(CurrentGameInstallPath)) return null;
-            var rootSearchPath = Path.GetDirectoryName(Path.GetDirectoryName(CurrentGameInstallPath));
-            if (string.IsNullOrEmpty(rootSearchPath)) return null;
+            foreach (var candidatePath in EnumerateCandidateInstallPaths())
+            {
+                if (token.IsCancellationRequested) return null;
+                if (!IsValidGameInstallPath(candidatePath)) continue;
 
-            var gameName = Path.GetFileNameWithoutExtension(CurrentGameExecutableByPreset);
-            var options = new EnumerationOptions
-                { RecurseSubdirectories = true, IgnoreInaccessible = true, MatchType = MatchType.Simple };
+                SharedStatic.InstanceLogger.LogInformation(
+                    "[WuwaGameManager::FindExistingInstallPath] Found existing game installation path: {Path}",
+                    candidatePath);
+                return candidatePath;
+            }
 
+            SharedStatic.InstanceLogger.LogDebug(
+                "[WuwaGameManager::FindExistingInstallPath] No existing game installation was found.");
+            return null;
+        }, token);
+    }
+
+    /// <summary>
+    /// Enumerates every plausible game installation directory, in order of confidence.
+    /// </summary>
+    private IEnumerable<string> EnumerateCandidateInstallPaths()
+    {
+        // 1. Sibling of the currently configured path (keeps the legacy behaviour working).
+        if (!string.IsNullOrEmpty(CurrentGameInstallPath))
+        {
+            if (IsValidGameInstallPath(CurrentGameInstallPath))
+                yield return CurrentGameInstallPath;
+
+            var parentPath = Path.GetDirectoryName(CurrentGameInstallPath);
+            if (!string.IsNullOrEmpty(parentPath))
+                yield return Path.Combine(parentPath, LauncherGameDirectoryName);
+        }
+
+        // 2. Installation roots recorded by the official Kuro launcher in the registry.
+        foreach (var launcherRootPath in EnumerateKuroLauncherRootPaths())
+        {
+            yield return Path.Combine(launcherRootPath, LauncherGameDirectoryName);
+
+            // Some setups keep the game right next to the launcher executable.
+            yield return launcherRootPath;
+        }
+
+        // 3. Well-known default locations on every fixed drive.
+        foreach (var candidatePath in EnumerateWellKnownInstallPaths())
+            yield return candidatePath;
+    }
+
+    /// <summary>
+    /// Checks whether the given path really is a Wuthering Waves game directory, by requiring both
+    /// the bootstrap executable and the engine executable to be present.
+    /// </summary>
+    private bool IsValidGameInstallPath(string? candidatePath)
+    {
+        if (string.IsNullOrEmpty(candidatePath) || !Directory.Exists(candidatePath)) return false;
+
+        var bootstrapExecutablePath = Path.Combine(candidatePath, CurrentGameExecutableByPreset);
+        var engineExecutablePath = Path.Combine(candidatePath, EngineExecutableRelativePath);
+
+        return File.Exists(bootstrapExecutablePath) && File.Exists(engineExecutablePath);
+    }
+
+    /// <summary>
+    /// Reads the launcher installation roots from the registry records written by the official
+    /// Kuro launcher. This is what makes the auto-detection work without a manual config.ini.
+    /// </summary>
+    /// <remarks>
+    /// The plugin is only ever loaded by Collapse Launcher, which is a Windows-only application,
+    /// hence the unconditional usage of the Windows registry API.
+    /// </remarks>
+#pragma warning disable CA1416 // Validate platform compatibility
+    private static IEnumerable<string> EnumerateKuroLauncherRootPaths()
+    {
+        List<string> results = [];
+
+        CollectFromRegistryHive(Registry.CurrentUser, KuroLauncherRegistryKeyPath, results);
+        CollectFromRegistryHive(Registry.LocalMachine, KuroLauncherRegistryKeyPath, results);
+        CollectFromRegistryHive(Registry.LocalMachine, @"Software\WOW6432Node\kurogame\KRLauncher", results);
+
+        // Fallback: the "KuroLauncher.<appId>" URL protocol registration stores the launcher path.
+        CollectFromLauncherProtocolRegistration(results);
+
+        return results;
+    }
+
+    private static void CollectFromRegistryHive(RegistryKey hive, string subKeyPath, List<string> results)
+    {
+        try
+        {
+            using var rootKey = hive.OpenSubKey(subKeyPath);
+            if (rootKey == null) return;
+
+            foreach (var subKeyName in rootKey.GetSubKeyNames())
+            {
+                using var subKey = rootKey.OpenSubKey(subKeyName);
+                if (subKey?.GetValue(KuroLauncherInstallPathValueName) is not string installPath) continue;
+
+                AddCandidatePath(results, installPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            SharedStatic.InstanceLogger.LogDebug(
+                "[WuwaGameManager::FindExistingInstallPath] Failed to read '{SubKeyPath}' from {Hive}: {Error}",
+                subKeyPath, hive.Name, ex.Message);
+        }
+    }
+
+    private static void CollectFromLauncherProtocolRegistration(List<string> results)
+    {
+        try
+        {
+            using var classesKey = Registry.LocalMachine.OpenSubKey(@"Software\Classes");
+            if (classesKey == null) return;
+
+            foreach (var subKeyName in classesKey.GetSubKeyNames())
+            {
+                // e.g. "KuroLauncher.10003"
+                if (!subKeyName.StartsWith("KuroLauncher.", StringComparison.OrdinalIgnoreCase)) continue;
+
+                using var subKey = classesKey.OpenSubKey(subKeyName);
+                using var defaultIconKey = subKey?.OpenSubKey("DefaultIcon");
+                if (defaultIconKey?.GetValue(string.Empty) is not string launcherExecutablePath) continue;
+
+                // The value looks like: C:\Program Files\Wuthering Waves\launcher.exe
+                var launcherRootPath = Path.GetDirectoryName(launcherExecutablePath.Trim().Trim('"'));
+                AddCandidatePath(results, launcherRootPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            SharedStatic.InstanceLogger.LogDebug(
+                "[WuwaGameManager::FindExistingInstallPath] Failed to read the launcher protocol registration: {Error}",
+                ex.Message);
+        }
+    }
+#pragma warning restore CA1416 // Validate platform compatibility
+
+    private static void AddCandidatePath(List<string> results, string? candidatePath)
+    {
+        if (string.IsNullOrWhiteSpace(candidatePath)) return;
+
+        var normalizedPath = candidatePath.Trim().Trim('"').TrimEnd('\\', '/');
+        if (normalizedPath.Length == 0) return;
+        if (results.Exists(x => string.Equals(x, normalizedPath, StringComparison.OrdinalIgnoreCase))) return;
+
+        results.Add(normalizedPath);
+    }
+
+    private IEnumerable<string> EnumerateWellKnownInstallPaths()
+    {
+        foreach (var driveRootPath in EnumerateFixedDriveRoots())
+        {
+            yield return Path.Combine(driveRootPath, "Program Files", LauncherRootFolderName, LauncherGameDirectoryName);
+            yield return Path.Combine(driveRootPath, "Program Files (x86)", LauncherRootFolderName, LauncherGameDirectoryName);
+            yield return Path.Combine(driveRootPath, LauncherRootFolderName, LauncherGameDirectoryName);
+            yield return Path.Combine(driveRootPath, "Games", LauncherRootFolderName, LauncherGameDirectoryName);
+            yield return Path.Combine(driveRootPath, "Kuro Games", LauncherRootFolderName, LauncherGameDirectoryName);
+            yield return Path.Combine(driveRootPath, LauncherGameDirectoryName);
+        }
+    }
+
+    private static IEnumerable<string> EnumerateFixedDriveRoots()
+    {
+        DriveInfo[] drives;
+        try
+        {
+            drives = DriveInfo.GetDrives();
+        }
+        catch (Exception ex)
+        {
+            SharedStatic.InstanceLogger.LogDebug(
+                "[WuwaGameManager::FindExistingInstallPath] Failed to enumerate drives: {Error}", ex.Message);
+            yield break;
+        }
+
+        foreach (var drive in drives)
+        {
+            string? rootPath = null;
             try
             {
-                foreach (var filePath in Directory.EnumerateFiles(rootSearchPath, $"*{gameName}*", options))
-                {
-                    if (token.IsCancellationRequested) return null;
-                    var parentPath = Path.GetDirectoryName(filePath);
-                    if (parentPath == null) continue;
-                    if (File.Exists(Path.Combine(parentPath, "app-game-config.json"))) return parentPath;
-                }
+                if (drive.DriveType != DriveType.Fixed || !drive.IsReady) continue;
+                rootPath = drive.RootDirectory.FullName;
             }
             catch
             {
-                return null;
+                // Ignore drives which cannot be probed (e.g. disconnected network mounts).
             }
 
-            return null;
-        }, token);
+            if (!string.IsNullOrEmpty(rootPath)) yield return rootPath;
+        }
     }
 
     public override void LoadConfig()

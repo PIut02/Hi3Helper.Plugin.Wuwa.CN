@@ -37,7 +37,7 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
     public override IGameManager? GameManager
     {
         get => field ??= new WuwaGameManager(ExecutableName, ApiResponseUrl, ApiResponseAssetUrl, AuthenticationHash,
-            CurrentTag, Hash1);
+            CurrentTag, Hash1, LauncherGameDirectoryName);
         set;
     }
 

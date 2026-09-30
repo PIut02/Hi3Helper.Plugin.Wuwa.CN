@@ -46,7 +46,7 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
 
     [field: AllowNull]
     [field: MaybeNull]
-    public override string GameLogFileName => field ??= Path.Combine("Saved", "Logs", "Client.log");
+    public override string GameLogFileName => field ??= Path.Combine("Logs", "Client.log");
 
     [field: AllowNull] [field: MaybeNull] public override string GameVendorName => field ??= VendorName;
 
@@ -119,7 +119,7 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
     public override IGameManager? GameManager
     {
         get => field ??= new WuwaGameManager(ExecutableName, ApiResponseUrl, ApiResponseAssetUrl, AuthenticationHash,
-            CurrentTag, Hash1);
+            CurrentTag, Hash1, LauncherGameDirectoryName);
         set;
     }
 

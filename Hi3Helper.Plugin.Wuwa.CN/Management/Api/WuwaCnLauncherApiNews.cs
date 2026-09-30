@@ -60,8 +60,11 @@ internal partial class WuwaCnLauncherApiNews(string apiResponseBaseUrl, string g
         var decryptedAuth = "10003_Y8xXrXk65DqFHEDgApn3cpK5lfczpFx5";
         var requestNewsUrl = ApiResponseBaseUrl
             .CombineUrlFromString("launcher", decryptedAuth, decryptedTag, "information", "zh-Hans.json");
+
+        // The official launcher builds its social media bar from this endpoint. The legacy
+        // "pcstarter/prod/game/..." endpoint is still online but answers with an outdated entry set.
         var requestSocialUrl = ApiResponseBaseUrl
-            .CombineUrlFromString("pcstarter", "prod", "game", decryptedTag, decryptedAuth, "social", "zh-Hans.json");
+            .CombineUrlFromString("launcher", decryptedAuth, decryptedTag, "social", "zh-Hans.json");
 
         try
         {
@@ -75,15 +78,14 @@ internal partial class WuwaCnLauncherApiNews(string apiResponseBaseUrl, string g
 
         try
         {
-            // >>> MODIFIED: Deserialize to WuwaCnSocialRoot
             var json = await ApiResponseHttpClient.GetStringAsync(requestSocialUrl, token);
             ApiResponseSocialMedia = JsonSerializer.Deserialize<WuwaCnSocialRoot>(
                 json, WuwaApiResponseContext.Default.WuwaCnSocialRoot);
-            // <<< END MODIFIED
         }
-        catch
+        catch (Exception ex)
         {
-            /* Ignore social media errors */
+            SharedStatic.InstanceLogger.LogWarning(
+                $"[WuwaCnLauncherApiNews] Failed to load social media entries from '{requestSocialUrl}': {ex.Message}");
         }
 
         return 0;
@@ -160,14 +162,22 @@ internal partial class WuwaCnLauncherApiNews(string apiResponseBaseUrl, string g
     // >>> MODIFIED: Rewrite GetSocialMediaEntries for CN
     public override void GetSocialMediaEntries(out nint handle, out int count, out bool isDisposable, out bool isAllocated)
     {
-        if (ApiResponseSocialMedia?.Entries is null || ApiResponseSocialMedia.Entries.Count == 0)
+        if (ApiResponseSocialMedia is null || ApiResponseSocialMedia.Switch != 1)
         {
             InitializeEmpty(out handle, out count, out isDisposable, out isAllocated);
             return;
         }
 
-        var validEntries = ApiResponseSocialMedia.Entries
-            .Where(x => x.Switch == 1 && !string.IsNullOrEmpty(x.Name))
+        var entries = ApiResponseSocialMedia.Entries;
+        if (entries is null || entries.Count == 0)
+        {
+            InitializeEmpty(out handle, out count, out isDisposable, out isAllocated);
+            return;
+        }
+
+        // The host cannot render an entry without an icon and a title, so skip those.
+        var validEntries = entries
+            .Where(x => !string.IsNullOrEmpty(x.Name) && !string.IsNullOrEmpty(x.IconUrl))
             .ToList();
 
         if (validEntries.Count == 0)
@@ -184,12 +194,26 @@ internal partial class WuwaCnLauncherApiNews(string apiResponseBaseUrl, string g
 
         for (var i = 0; i < validEntries.Count; i++)
         {
-            ref var unmanagedEntries = ref memory[i];
+            ref var unmanagedEntry = ref memory[i];
             var entry = validEntries[i];
-            unmanagedEntries.WriteIcon(entry.IconUrl ?? "");
-            unmanagedEntries.WriteDescription(entry.Name!);
-            string clickUrl = entry.ClickUrl ?? entry.QrCodeUrl ?? "";
-            unmanagedEntries.WriteClickUrl(clickUrl);
+
+            unmanagedEntry.WriteIcon(entry.IconUrl);
+            unmanagedEntry.WriteDescription(entry.Name);
+
+            // Entries such as WeChat or QQ intentionally have no jump URL and are meant to be opened
+            // by scanning their QR code, so never fall back to the QR image URL as a click target.
+            unmanagedEntry.WriteClickUrl(entry.IconJumpUrl);
+
+            var qrCode = entry.QrCode;
+            if (!string.IsNullOrEmpty(qrCode?.Url))
+            {
+                unmanagedEntry.WriteQrImage(qrCode!.Url);
+                unmanagedEntry.WriteQrImageDescription(qrCode.Explain);
+            }
+
+            // Note: 'secondJumpInfoList' (e.g. the QQ groups) is intentionally not forwarded.
+            // The host reads those from LauncherSocialMediaEntry.ChildEntryHandle, but
+            // Hi3Helper.Plugin.Core does not expose any way for a plugin to assign that handle yet.
         }
     }
     // <<< END MODIFIED

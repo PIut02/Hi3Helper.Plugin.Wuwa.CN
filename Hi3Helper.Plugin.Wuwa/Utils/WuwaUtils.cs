@@ -17,10 +17,10 @@ namespace Hi3Helper.Plugin.Wuwa.Utils;
 
 internal static class WuwaUtils
 {
-    internal static HttpClient CreateApiHttpClient(string? apiBaseUrl = null, string? gameTag = null, string? authCdnToken = "", string? apiOptions = "", string? hash1 = "")
-        => CreateApiHttpClientBuilder(apiBaseUrl, gameTag, authCdnToken, apiOptions, hash1).Create();
+    internal static HttpClient CreateApiHttpClient(string? apiBaseUrl = null, string? gameTag = null, string? authCdnToken = "", string? apiOptions = "", string? hash1 = "", bool areParametersEncrypted = true)
+        => CreateApiHttpClientBuilder(apiBaseUrl, gameTag, authCdnToken, apiOptions, hash1, areParametersEncrypted).Create();
 
-    private static PluginHttpClientBuilder CreateApiHttpClientBuilder(string? apiBaseUrl, string? gameTag = null, string? authCdnToken= "", string? accessOption = null, string? hash1 = "")
+    private static PluginHttpClientBuilder CreateApiHttpClientBuilder(string? apiBaseUrl, string? gameTag = null, string? authCdnToken= "", string? accessOption = null, string? hash1 = "", bool areParametersEncrypted = true)
     {
         PluginHttpClientBuilder builder = new PluginHttpClientBuilder()
             .SetUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36");
@@ -33,7 +33,7 @@ internal static class WuwaUtils
 
         if (!string.IsNullOrEmpty(authCdnToken))
         {
-            authCdnToken = authCdnToken.AeonPlsHelpMe();
+            authCdnToken = authCdnToken.ResolveApiParameter(areParametersEncrypted);
 #if DEBUG
             SharedStatic.InstanceLogger.LogTrace("Decoded authCdnToken: {}", authCdnToken);
 #endif
@@ -59,6 +59,22 @@ internal static class WuwaUtils
         builder.AddHeader("Host", hostname);
 
         return builder;
+    }
+
+    /// <summary>
+    /// Resolves an API parameter (tag, authentication hash, ...) into its usable form.
+    /// <br/>
+    /// The global CDN ships these values in an obfuscated form, while other regions
+    /// (e.g. the mainland China CDN) hand them out verbatim.
+    /// </summary>
+    /// <param name="value">The raw value from the preset config.</param>
+    /// <param name="isEncrypted"><c>true</c> when <paramref name="value"/> needs to be de-obfuscated.</param>
+    internal static string ResolveApiParameter(this string? value, bool isEncrypted)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        return isEncrypted ? value.AeonPlsHelpMe() : value;
     }
 
     internal static string AeonPlsHelpMe(this string whatDaDup)

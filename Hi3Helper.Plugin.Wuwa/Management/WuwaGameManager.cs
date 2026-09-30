@@ -26,23 +26,34 @@ namespace Hi3Helper.Plugin.Wuwa.Management;
 internal partial class WuwaGameManager : GameManagerBase
 {
     internal WuwaGameManager(string gameExecutableNameByPreset,
+        string apiResponseUrl,
         string apiResponseAssetUrl,
         string authenticationHash,
         string gameTag,
-        string hash1)
+        string hash1,
+        bool areApiParametersEncrypted = true,
+        string thirdPartySdkFolderName = "KrPcSdk_Global",
+        string sdkMarkerFileName = "KRSDK.bin",
+        string gameDirectoryName = "Wuthering Waves Game")
     {
         CurrentGameExecutableByPreset = gameExecutableNameByPreset;
+        ApiResponseUrl = apiResponseUrl;
         AuthenticationHash = authenticationHash;
         ApiResponseAssetUrl = apiResponseAssetUrl;
         GameTag = gameTag;
         Hash1 = hash1;
+        AreApiParametersEncrypted = areApiParametersEncrypted;
+        ThirdPartySdkFolderName = thirdPartySdkFolderName;
+        SdkMarkerFileName = sdkMarkerFileName;
+        GameDirectoryName = gameDirectoryName;
     }
 
     [field: AllowNull, MaybeNull]
     protected override HttpClient ApiResponseHttpClient
     {
         get => field ??=
-            WuwaUtils.CreateApiHttpClient(ApiResponseAssetUrl, GameTag, AuthenticationHash, "", Hash1);
+            WuwaUtils.CreateApiHttpClient(ApiResponseAssetUrl, GameTag, AuthenticationHash, "", Hash1,
+                AreApiParametersEncrypted);
         set;
     }
 
@@ -50,14 +61,33 @@ internal partial class WuwaGameManager : GameManagerBase
     private HttpClient ApiDownloadHttpClient
     {
         get => field ??=
-            WuwaUtils.CreateApiHttpClient(ApiResponseAssetUrl, GameTag, AuthenticationHash, "", Hash1);
+            WuwaUtils.CreateApiHttpClient(ApiResponseAssetUrl, GameTag, AuthenticationHash, "", Hash1,
+                AreApiParametersEncrypted);
         set;
     }
 
+    internal string ApiResponseUrl { get; }
     internal string ApiResponseAssetUrl { get; }
     private string GameTag { get; set; }
     private string AuthenticationHash { get; set; }
     private string Hash1 { get; set; }
+    private bool AreApiParametersEncrypted { get; }
+
+    /// <summary>
+    /// Name of the Kuro PC SDK folder inside <c>Client\Binaries\Win64\ThirdParty</c>.
+    /// </summary>
+    private string ThirdPartySdkFolderName { get; }
+
+    /// <summary>
+    /// Marker file which has to exist inside the SDK folder for an installation to be recognized.
+    /// </summary>
+    private string SdkMarkerFileName { get; }
+
+    /// <summary>
+    /// Name of the game folder inside the launcher installation root, used when looking for an
+    /// already existing installation.
+    /// </summary>
+    private string GameDirectoryName { get; }
 
     private WuwaApiResponseGameConfig? ApiGameConfigResponse { get; set; }
     private string CurrentGameExecutableByPreset { get; }
@@ -269,7 +299,7 @@ internal partial class WuwaGameManager : GameManagerBase
 					"Client\\Binaries\\Win64\\Client-Win64-Shipping.exe"));
 			string executablePath3 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
 				Path.Combine(CurrentGameInstallPath!,
-					"Client\\Binaries\\Win64\\ThirdParty\\KrPcSdk_Global\\KRSDKRes\\KRSDK.bin"));
+					$"Client\\Binaries\\Win64\\ThirdParty\\{ThirdPartySdkFolderName}\\KRSDKRes\\{SdkMarkerFileName}"));
 			string executablePath4 = Path.Combine(CurrentGameInstallPath ?? string.Empty,
 				Path.Combine(CurrentGameInstallPath!, "app-game-config.json"));
 			return File.Exists(executablePath1) &&
@@ -343,8 +373,8 @@ internal partial class WuwaGameManager : GameManagerBase
             return 0;
 
         string gameConfigUrl =
-            $"https://prod-alicdn-gamestarter.kurogame.com/launcher/game/{GameTag.AeonPlsHelpMe()}/" +
-            $"{AuthenticationHash.AeonPlsHelpMe()}/index.json";
+            $"{ApiResponseUrl}launcher/game/{GameTag.ResolveApiParameter(AreApiParametersEncrypted)}/" +
+            $"{AuthenticationHash.ResolveApiParameter(AreApiParametersEncrypted)}/index.json";
 
         using HttpResponseMessage configMessage =
             await ApiResponseHttpClient.GetAsync(gameConfigUrl, HttpCompletionOption.ResponseHeadersRead, token);
@@ -488,57 +518,91 @@ internal partial class WuwaGameManager : GameManagerBase
     protected override Task<string?> FindExistingInstallPathAsyncInner(CancellationToken token)
         => Task.Run(() =>
         {
-            if (string.IsNullOrEmpty(CurrentGameInstallPath))
-                return null;
+            // 1. Legacy behaviour: look around the currently configured installation path.
+            string? foundPath = FindExistingInstallPathAroundConfiguredPath(token);
+            if (!string.IsNullOrEmpty(foundPath))
+                return foundPath;
 
-            string? rootSearchPath = Path.GetDirectoryName(Path.GetDirectoryName(CurrentGameInstallPath));
-            if (string.IsNullOrEmpty(rootSearchPath))
-                return null;
-
-            string gameName = Path.GetFileNameWithoutExtension(CurrentGameExecutableByPreset);
-
-            var options = new EnumerationOptions
+            // 2. Consult the installation records written by the official Kuro launcher (and the
+            //    well-known default locations), so that a fresh setup does not need to have its
+            //    game path set by hand before the game can be found.
+            foreach (string candidatePath in WuwaInstallationLocator.EnumerateCandidatePaths(GameDirectoryName))
             {
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = true,
-                MatchType = MatchType.Simple
-            };
+                if (token.IsCancellationRequested)
+                    return null;
+
+                if (!WuwaInstallationLocator.IsValidGameInstallPath(candidatePath, CurrentGameExecutableByPreset))
+                    continue;
+
+                SharedStatic.InstanceLogger.LogInformation(
+                    "[WuwaGameManager::FindExistingInstallPath] Found existing game installation path: {Path}",
+                    candidatePath);
+                return candidatePath;
+            }
+
+            SharedStatic.InstanceLogger.LogDebug(
+                "[WuwaGameManager::FindExistingInstallPath] No existing game installation was found.");
+            return null;
+        }, token);
+
+    /// <summary>
+    /// Looks for another game installation inside the directory tree around the currently
+    /// configured installation path.
+    /// </summary>
+    private string? FindExistingInstallPathAroundConfiguredPath(CancellationToken token)
+    {
+        if (string.IsNullOrEmpty(CurrentGameInstallPath))
+            return null;
+
+        string? rootSearchPath = Path.GetDirectoryName(Path.GetDirectoryName(CurrentGameInstallPath));
+        if (string.IsNullOrEmpty(rootSearchPath))
+            return null;
+
+        string gameName = Path.GetFileNameWithoutExtension(CurrentGameExecutableByPreset);
+
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            IgnoreInaccessible = true,
+            MatchType = MatchType.Simple
+        };
 
 #if DEBUG
         SharedStatic.InstanceLogger.LogTrace("Start finding game existing installation using prefix: {PrefixName} from root path: {RootPath}", gameName, rootSearchPath);
 #endif
 
-            try
+        try
+        {
+            foreach (string filePath in Directory.EnumerateFiles(rootSearchPath, $"*{gameName}*", options))
             {
-                foreach (string filePath in Directory.EnumerateFiles(rootSearchPath, $"*{gameName}*", options))
-                {
-                    if (token.IsCancellationRequested)
-                        return null;
+                if (token.IsCancellationRequested)
+                    return null;
 
 #if DEBUG
                 SharedStatic.InstanceLogger.LogTrace("Got executable file at: {ExecPath}", filePath);
 #endif
 
-                    string? parentPath = Path.GetDirectoryName(filePath);
-                    if (parentPath == null)
-                        continue;
+                string? parentPath = Path.GetDirectoryName(filePath);
+                if (parentPath == null)
+                    continue;
 
-                    string jsonPath = Path.Combine(parentPath, "app-game-config.json");
-                    if (File.Exists(jsonPath))
-                    {
+                string jsonPath = Path.Combine(parentPath, "app-game-config.json");
+                if (File.Exists(jsonPath))
+                {
 #if DEBUG
                     SharedStatic.InstanceLogger.LogTrace("Found app-game-config.json at: {JsonPath}", jsonPath);
 #endif
-                        return parentPath;
-                    }
+                    return parentPath;
                 }
             }
-            catch (Exception)
-            {
-                return null;
-            }
+        }
+        catch (Exception)
+        {
             return null;
-        }, token);
+        }
+
+        return null;
+    }
 
 
     public override void LoadConfig()

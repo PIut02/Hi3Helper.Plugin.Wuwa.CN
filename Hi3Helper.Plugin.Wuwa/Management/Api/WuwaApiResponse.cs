@@ -6,6 +6,8 @@ namespace Hi3Helper.Plugin.Wuwa.Management.Api;
 [JsonSerializable(typeof(WuwaApiResponseMedia))]
 [JsonSerializable(typeof(WuwaApiResponseNews))]
 [JsonSerializable(typeof(WuwaApiResponseSocial))]
+[JsonSerializable(typeof(WuwaApiResponseSocialQrCode))]
+[JsonSerializable(typeof(WuwaApiResponseSocialSecondJumpInfo))]
 [JsonSerializable(typeof(WuwaApiResponseGameConfig))]
 [JsonSerializable(typeof(WuwaApiResponsePatchIndex))]
 [JsonSerializable(typeof(WuwaLauncherDownloadConfig))]

@@ -21,7 +21,8 @@ using Microsoft.Extensions.Logging;
 namespace Hi3Helper.Plugin.Wuwa.Management.Api;
 
 [GeneratedComClass]
-internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, string gameTag, string authenticationHash) : LauncherApiMediaBase
+internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, string gameTag, string authenticationHash,
+    bool areParametersEncrypted = true, string localeFileName = "en.json") : LauncherApiMediaBase
 {
     [field: AllowNull, MaybeNull]
     protected override HttpClient ApiResponseHttpClient
@@ -113,8 +114,8 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
 
     protected override async Task<int> InitAsync(CancellationToken token)
     {
-        string decodedAuthHash = authenticationHash.AeonPlsHelpMe();
-        string decodedGameTag  = gameTag.AeonPlsHelpMe();
+        string decodedAuthHash = authenticationHash.ResolveApiParameter(areParametersEncrypted);
+        string decodedGameTag  = gameTag.ResolveApiParameter(areParametersEncrypted);
 
         // Step 1 — fetch the stable launcher-config endpoint to resolve the current (rotating) background hash.
         // URL: {CDN}/launcher/launcher/{clientId}/{gameId}/index.json
@@ -151,9 +152,9 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
 #endif
 
         // Step 2 — fetch the wallpapers-slogan endpoint using the dynamic hash.
-        // URL: {CDN}/launcher/{clientId}/{gameId}/background/{hash}/en.json
+        // URL: {CDN}/launcher/{clientId}/{gameId}/background/{hash}/{locale}.json
         string wallpaperUrl = ApiResponseBaseUrl
-            .CombineUrlFromString("launcher", decodedAuthHash, decodedGameTag, "background", backgroundHash, "en.json");
+            .CombineUrlFromString("launcher", decodedAuthHash, decodedGameTag, "background", backgroundHash, localeFileName);
 
 #if DEBUG
         SharedStatic.InstanceLogger.LogDebug(

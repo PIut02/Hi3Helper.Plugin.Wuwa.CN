@@ -22,12 +22,18 @@ using Hi3Helper.Plugin.Wuwa.Utils;
 namespace Hi3Helper.Plugin.Wuwa.Management.Api;
 
 [GeneratedComClass]
-internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, string gameTag, string authenticationHash, string apiOptions, string hash1) : LauncherApiNewsBase
+internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, string gameTag, string authenticationHash, string apiOptions, string hash1,
+    bool areParametersEncrypted = true, string localeFileName = "en.json") : LauncherApiNewsBase
 {
     [field: AllowNull, MaybeNull]
     protected override HttpClient ApiResponseHttpClient
     {
-        get => field ??= WuwaUtils.CreateApiHttpClient(ApiResponseBaseUrl, gameTag.AeonPlsHelpMe(), authenticationHash.AeonPlsHelpMe(), apiOptions, hash1.AeonPlsHelpMe());
+        get => field ??= WuwaUtils.CreateApiHttpClient(ApiResponseBaseUrl,
+            gameTag,
+            authenticationHash,
+            apiOptions,
+            hash1,
+            areParametersEncrypted);
         set;
     }
 
@@ -51,17 +57,17 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
     {
         string requestSocialUrl = ApiResponseBaseUrl
                .CombineUrlFromString("launcher",
-                        gameTag.AeonPlsHelpMe(),
-                        authenticationHash.AeonPlsHelpMe(),
+                        gameTag.ResolveApiParameter(areParametersEncrypted),
+                        authenticationHash.ResolveApiParameter(areParametersEncrypted),
                         "social",
-                        "en.json");
+                        localeFileName);
 
         string requestNewsUrl = ApiResponseBaseUrl
                .CombineUrlFromString("launcher",
-                        authenticationHash.AeonPlsHelpMe(),
-                        gameTag.AeonPlsHelpMe(),
+                        authenticationHash.ResolveApiParameter(areParametersEncrypted),
+                        gameTag.ResolveApiParameter(areParametersEncrypted),
                         "information",
-                        "en.json");
+                        localeFileName);
 
         // Fetch social and news in parallel so one failing doesn't delay the other.
         await Task.WhenAll(
@@ -219,12 +225,16 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
                 return;
             }
 
+            // An entry needs a name and an icon to be renderable. It does not necessarily need a
+            // click URL: some regions (e.g. the mainland China CDN) serve entries such as WeChat or
+            // QQ which are meant to be opened by scanning their QR code only.
             List<WuwaApiResponseSocialResponse> validEntries =
             [
                 ..ApiResponseSocialMedia.SocialMediaEntries
                                          .Where(x => !string.IsNullOrEmpty(x.SocialMediaName) &&
-                                                     !string.IsNullOrEmpty(x.ClickUrl) &&
-                                                     !string.IsNullOrEmpty(x.IconUrl)
+                                                     !string.IsNullOrEmpty(x.IconUrl) &&
+                                                     (!string.IsNullOrEmpty(x.ClickUrl) ||
+                                                      !string.IsNullOrEmpty(x.QrCode?.Url))
                                           )
             ];
             int entryCount = validEntries.Count;
@@ -243,14 +253,23 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
             for (int i = 0; i < entryCount; i++)
             {
                 string  socialMediaName = validEntries[i].SocialMediaName!;
-                string  clickUrl        = validEntries[i].ClickUrl!;
+                string? clickUrl        = validEntries[i].ClickUrl;
                 string? iconUrl         = validEntries[i].IconUrl;
+                WuwaApiResponseSocialQrCode? qrCode = validEntries[i].QrCode;
 
                 ref LauncherSocialMediaEntry unmanagedEntries = ref memory[i];
 
                 unmanagedEntries.WriteIcon(iconUrl);
                 unmanagedEntries.WriteDescription(socialMediaName);
                 unmanagedEntries.WriteClickUrl(clickUrl);
+
+                // Forward the QR code card, otherwise the launcher has no way to display the
+                // scan-to-open entries (WeChat, QQ groups, ...).
+                if (!string.IsNullOrEmpty(qrCode?.Url))
+                {
+                    unmanagedEntries.WriteQrImage(qrCode!.Url);
+                    unmanagedEntries.WriteQrImageDescription(qrCode.Explain);
+                }
             }
         }
         catch (Exception ex)

@@ -15,14 +15,38 @@ namespace Hi3Helper.Plugin.Wuwa.Management.PresetConfig;
 [GeneratedComClass]
 public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
 {
-    protected const string ApiResponseUrl = "https://prod-alicdn-gamestarter.kurogame.com/";
-    protected const string ApiResponseAssetUrl = "https://pcdownload-huoshan.aki-game.net/";
-    protected const string CurrentTag = "JFJWUA";
-    protected const string AuthenticationHash = "VlNTU1c8DAEsKzslESUCDRIQAiomLA4WKBEMIAABOQgyMSEgVAA";
-    protected const string Hash1 = "VzMgJyIRJlMyEgYHViowOSUSDBUQGhpSMDknVSJbBhA";
-    protected const string ExecutableName = "Wuthering Waves.exe";
+    // Region-specific endpoint and credential values.
+    // These are virtual (instead of const) so that another region — e.g. the mainland
+    // China CDN — can supply its own values from a derived preset config.
+    protected virtual string ApiResponseUrl => "https://prod-alicdn-gamestarter.kurogame.com/";
+    protected virtual string ApiResponseAssetUrl => "https://pcdownload-huoshan.aki-game.net/";
+    protected virtual string CurrentTag => "JFJWUA";
+    protected virtual string AuthenticationHash => "VlNTU1c8DAEsKzslESUCDRIQAiomLA4WKBEMIAABOQgyMSEgVAA";
+    protected virtual string Hash1 => "VzMgJyIRJlMyEgYHViowOSUSDBUQGhpSMDknVSJbBhA";
+    protected virtual string ExecutableName => "Wuthering Waves.exe";
     private const string EngineExecutableName = "Client-Win64-Shipping.exe";
-	private const string VendorName = "Kuro Games";
+	protected virtual string VendorName => "Kuro Games";
+
+    /// <summary>
+    /// Whether the values in <see cref="CurrentTag"/>, <see cref="AuthenticationHash"/> and
+    /// <see cref="Hash1"/> are obfuscated and have to be decoded before being used.
+    /// </summary>
+    protected virtual bool AreApiParametersEncrypted => true;
+
+    /// <summary>
+    /// File name of the localized API payloads to request (e.g. <c>en.json</c>).
+    /// </summary>
+    protected virtual string ApiLocaleFileName => "en.json";
+
+    /// <summary>
+    /// Name of the Kuro PC SDK folder inside <c>Client\Binaries\Win64\ThirdParty</c>.
+    /// </summary>
+    protected virtual string ThirdPartySdkFolderName => "KrPcSdk_Global";
+
+    /// <summary>
+    /// Name of the marker file used to detect an installation of the corresponding SDK.
+    /// </summary>
+    protected virtual string SdkMarkerFileName => "KRSDK.bin";
 
     [field: AllowNull, MaybeNull]
     public override string GameName => field ??= "Wuthering Waves";
@@ -97,19 +121,23 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
 
     public override ILauncherApiMedia? LauncherApiMedia
     {
-        get => field ??= new WuwaGlobalLauncherApiMedia(ApiResponseUrl, CurrentTag, AuthenticationHash);
+        get => field ??= new WuwaGlobalLauncherApiMedia(ApiResponseUrl, CurrentTag, AuthenticationHash,
+            AreApiParametersEncrypted, ApiLocaleFileName);
         set;
     }
 
     public override ILauncherApiNews? LauncherApiNews
     {
-        get => field ??= new WuwaGlobalLauncherApiNews(ApiResponseUrl, CurrentTag, AuthenticationHash, "news", Hash1);
+        get => field ??= new WuwaGlobalLauncherApiNews(ApiResponseUrl, CurrentTag, AuthenticationHash, "news", Hash1,
+            AreApiParametersEncrypted, ApiLocaleFileName);
         set;
     }
 
     public override IGameManager? GameManager
     {
-        get => field ??= new WuwaGameManager(ExecutableName, ApiResponseAssetUrl, AuthenticationHash, CurrentTag, Hash1);
+        get => field ??= new WuwaGameManager(ExecutableName, ApiResponseUrl, ApiResponseAssetUrl, AuthenticationHash,
+            CurrentTag, Hash1, AreApiParametersEncrypted, ThirdPartySdkFolderName, SdkMarkerFileName,
+            LauncherGameDirectoryName);
         set;
     }
 

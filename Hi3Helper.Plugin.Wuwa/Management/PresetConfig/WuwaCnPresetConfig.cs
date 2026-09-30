@@ -19,9 +19,6 @@ namespace Hi3Helper.Plugin.Wuwa.Management.PresetConfig;
 [GeneratedComClass]
 public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
 {
-    [field: AllowNull, MaybeNull]
-    public override string GameName => field ??= "鸣潮";
-
     // ---------------------------------------------------------------- region endpoints
     protected override string ApiResponseUrl => "https://prod-cn-alicdn-gamestarter.kurogame.com/";
     protected override string ApiResponseAssetUrl => "https://pcdownload-aliyun.aki-game.com/";
@@ -40,11 +37,21 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
     protected override string SdkMarkerFileName => "KRSDKConfig.json";
 
     // ---------------------------------------------------------------- region metadata
+    // NOTE: 'GameName' is deliberately NOT overridden. The launcher groups all regions into a single
+    // game entry by that value, so overriding it here would make the mainland region show up as a
+    // second game next to the global one.
     [field: AllowNull, MaybeNull]
     public override string ProfileName => field ??= "WuwaCn";
 
+    /// <summary>
+    /// Region label. The canonical (English) name is used on purpose: the launcher translates it
+    /// through its own <c>_GameClientRegions</c> table, which maps it to 中国大陆 for Chinese UIs.
+    /// </summary>
     [field: AllowNull, MaybeNull]
-    public override string ZoneName => field ??= "中国大陆";
+    public override string ZoneName => field ??= "Mainland China";
+
+    [field: AllowNull, MaybeNull]
+    public override string ZoneFullName => field ??= "鸣潮 (中国大陆)";
 
     [field: AllowNull, MaybeNull]
     public override string GameMainLanguage => field ??= "zh-Hans";

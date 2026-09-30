@@ -54,8 +54,22 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
     /// </summary>
     protected virtual bool SupportsPatchAndPreload => true;
 
+    /// <summary>
+    /// Title of the game.
+    /// <br/><br/>
+    /// The launcher groups every preset config which shares this value into a single game entry and
+    /// uses <see cref="ZoneName"/> for the region selector, so all regions of this plugin MUST return
+    /// the exact same title here — otherwise the launcher lists them as separate games
+    /// (<c>PluginManager</c> builds <c>ConfigGameDict[GameName][ZoneName]</c>).
+    /// <br/><br/>
+    /// The launcher localizes whatever is returned here through its own <c>_GameClientTitles</c>
+    /// table. Collapse's tables currently have no entry for "Wuthering Waves", so the canonical
+    /// English title would stay untranslated in a Chinese UI. This fork therefore pins the Chinese
+    /// title. If Collapse ever ships a <c>Wuthering Waves → 鸣潮</c> translation, switch this back to
+    /// <c>"Wuthering Waves"</c> and let the launcher localize it.
+    /// </summary>
     [field: AllowNull, MaybeNull]
-    public override string GameName => field ??= "Wuthering Waves";
+    public override string GameName => field ??= "鸣潮";
 
 	[field: AllowNull, MaybeNull]
 	public override string GameExecutableName => field ??= Path.Combine("Client", "Binaries", "Win64", EngineExecutableName);

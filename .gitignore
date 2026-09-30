@@ -402,3 +402,6 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 Indexer/Compiled/*
+
+# WorkBuddy local project data / agent memory
+.workbuddy/

@@ -1,4 +1,5 @@
 using Hi3Helper.Plugin.Core.Management;
+using Hi3Helper.Plugin.Wuwa.Utils;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices.Marshalling;
 
@@ -50,8 +51,12 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
     [field: AllowNull, MaybeNull]
     public override string ZoneName => field ??= "Mainland China";
 
-    [field: AllowNull, MaybeNull]
-    public override string ZoneFullName => field ??= "鸣潮 (中国大陆)";
+    /// <summary>
+    /// Human readable "game (region)" label. The launcher only uses it in log messages; it is handed
+    /// out in the launcher's UI language for consistency with <see cref="WuwaGlobalPresetConfig.GameName"/>.
+    /// </summary>
+    public override string ZoneFullName =>
+        WuwaLocale.Get("Wuthering Waves (Mainland China)", "鸣潮 (中国大陆)");
 
     [field: AllowNull, MaybeNull]
     public override string GameMainLanguage => field ??= "zh-Hans";
@@ -61,9 +66,14 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
     [field: AllowNull, MaybeNull]
     public override string ZoneHomePageUrl => field ??= "https://mc.kurogames.com/";
 
-    [field: AllowNull, MaybeNull]
-    public override string ZoneDescription => field ??=
-        "《鸣潮》是一款强调开放世界动作类游戏，拥有高自由度的战斗玩法和丰富多样的叙事内容。玩家将扮演沉睡后苏醒的漂泊者，与众多共鸣者一同踏上找回遗失记忆的旅途。";
+    /// <summary>
+    /// Region description, shown in the launcher's game selector. A Chinese UI gets the localized
+    /// text, anything else falls back to the description inherited from the global region.
+    /// </summary>
+    public override string ZoneDescription =>
+        WuwaLocale.IsChineseUi
+            ? "《鸣潮》是一款强调开放世界动作类游戏，拥有高自由度的战斗玩法和丰富多样的叙事内容。玩家将扮演沉睡后苏醒的漂泊者，与众多共鸣者一同踏上找回遗失记忆的旅途。"
+            : base.ZoneDescription;
 
     public override IGameManager? GameManager
     {

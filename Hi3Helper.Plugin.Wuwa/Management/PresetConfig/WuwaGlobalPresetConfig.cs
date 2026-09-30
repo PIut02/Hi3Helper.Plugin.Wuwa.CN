@@ -2,6 +2,7 @@
 using Hi3Helper.Plugin.Core.Management.Api;
 using Hi3Helper.Plugin.Core.Management.PresetConfig;
 using Hi3Helper.Plugin.Wuwa.Management.Api;
+using Hi3Helper.Plugin.Wuwa.Utils;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
@@ -62,14 +63,14 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
     /// the exact same title here — otherwise the launcher lists them as separate games
     /// (<c>PluginManager</c> builds <c>ConfigGameDict[GameName][ZoneName]</c>).
     /// <br/><br/>
-    /// The launcher localizes whatever is returned here through its own <c>_GameClientTitles</c>
-    /// table. Collapse's tables currently have no entry for "Wuthering Waves", so the canonical
-    /// English title would stay untranslated in a Chinese UI. This fork therefore pins the Chinese
-    /// title. If Collapse ever ships a <c>Wuthering Waves → 鸣潮</c> translation, switch this back to
-    /// <c>"Wuthering Waves"</c> and let the launcher localize it.
+    /// The value is handed out in the launcher's own UI language: the launcher pushes its language
+    /// before the preset configs are created (see <see cref="WuwaLocale"/>) and its
+    /// <c>_GameClientTitles</c> table has no entry for "Wuthering Waves", so the plugin localizes the
+    /// title itself. This is intentionally not cached, so a language change is picked up as soon as
+    /// the launcher re-reads the value.
     /// </summary>
-    [field: AllowNull, MaybeNull]
-    public override string GameName => field ??= "鸣潮";
+    public override string GameName =>
+        WuwaLocale.Get("Wuthering Waves", "鸣潮");
 
 	[field: AllowNull, MaybeNull]
 	public override string GameExecutableName => field ??= Path.Combine("Client", "Binaries", "Win64", EngineExecutableName);

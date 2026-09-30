@@ -34,7 +34,8 @@ internal partial class WuwaGameManager : GameManagerBase
         bool areApiParametersEncrypted = true,
         string thirdPartySdkFolderName = "KrPcSdk_Global",
         string sdkMarkerFileName = "KRSDK.bin",
-        string gameDirectoryName = "Wuthering Waves Game")
+        string gameDirectoryName = "Wuthering Waves Game",
+        bool supportsPatchAndPreload = true)
     {
         CurrentGameExecutableByPreset = gameExecutableNameByPreset;
         ApiResponseUrl = apiResponseUrl;
@@ -46,6 +47,30 @@ internal partial class WuwaGameManager : GameManagerBase
         ThirdPartySdkFolderName = thirdPartySdkFolderName;
         SdkMarkerFileName = sdkMarkerFileName;
         GameDirectoryName = gameDirectoryName;
+        SupportsPatchAndPreload = ResolveSupportsPatchAndPreload(supportsPatchAndPreload);
+    }
+
+    /// <summary>
+    /// Environment variable which force-enables the patch/preload flow for a region where it is
+    /// disabled by default. Useful to validate the flow without rebuilding the plugin.
+    /// </summary>
+    private const string ForceEnablePatchingEnvironmentVariable = "WUWA_FORCE_ENABLE_PATCHING";
+
+    private static bool ResolveSupportsPatchAndPreload(bool configuredValue)
+    {
+        if (configuredValue)
+            return true;
+
+        bool isForceEnabled =
+            Environment.GetEnvironmentVariable(ForceEnablePatchingEnvironmentVariable) == "1";
+        if (isForceEnabled)
+        {
+            SharedStatic.InstanceLogger.LogWarning(
+                "[WuwaGameManager] Patch/preload flow was disabled for this region but got force-enabled by {EnvVar}=1.",
+                ForceEnablePatchingEnvironmentVariable);
+        }
+
+        return isForceEnabled;
     }
 
     [field: AllowNull, MaybeNull]
@@ -88,6 +113,15 @@ internal partial class WuwaGameManager : GameManagerBase
     /// already existing installation.
     /// </summary>
     private string GameDirectoryName { get; }
+
+    /// <summary>
+    /// Whether the update/patch/preload flow is available for this region.
+    /// <br/>
+    /// The flow relies on CDN endpoints which are region specific. Regions whose endpoints have not
+    /// been validated yet keep it disabled, so that an unverified patch run can never touch an
+    /// existing game installation.
+    /// </summary>
+    private bool SupportsPatchAndPreload { get; }
 
     private WuwaApiResponseGameConfig? ApiGameConfigResponse { get; set; }
     private string CurrentGameExecutableByPreset { get; }
@@ -202,6 +236,9 @@ internal partial class WuwaGameManager : GameManagerBase
     {
         get
         {
+            if (!SupportsPatchAndPreload)
+                return false;
+
             bool result = IsInstalled && ApiPreloadGameVersion != GameVersion.Empty && !HasUpdate;
             if (_lastHasPreload != result)
             {
@@ -218,6 +255,9 @@ internal partial class WuwaGameManager : GameManagerBase
     {
         get
         {
+            if (!SupportsPatchAndPreload)
+                return false;
+
             bool result = IsInstalled &&
                           (ApiGameVersion != CurrentGameVersion ||
                            HasPendingPreloadPatch ||

@@ -62,9 +62,18 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
     {
         get => field ??= new WuwaGameManager(ExecutableName, ApiResponseUrl, ApiResponseAssetUrl, AuthenticationHash,
             CurrentTag, Hash1, AreApiParametersEncrypted, ThirdPartySdkFolderName, SdkMarkerFileName,
-            LauncherGameDirectoryName);
+            LauncherGameDirectoryName, SupportsPatchAndPreload);
         set;
     }
+
+    /// <summary>
+    /// The upstream update/patch/preload flow still resolves its hotfix/patch sources from
+    /// global-only CDN endpoints (see <c>WuwaKnownHotfixPatch.WindowsCdnRoot</c>), and the mainland
+    /// download/patch endpoints have not been validated end-to-end yet. Until that is done, the
+    /// flow stays disabled for this region so an unverified patch run can never touch an existing
+    /// game installation. Set <c>WUWA_FORCE_ENABLE_PATCHING=1</c> to try it out without rebuilding.
+    /// </summary>
+    protected override bool SupportsPatchAndPreload => false;
 
     public override IGameInstaller? GameInstaller
     {

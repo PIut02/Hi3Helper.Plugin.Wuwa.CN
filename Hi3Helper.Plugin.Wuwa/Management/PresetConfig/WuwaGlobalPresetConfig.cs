@@ -48,6 +48,12 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
     /// </summary>
     protected virtual string SdkMarkerFileName => "KRSDK.bin";
 
+    /// <summary>
+    /// Whether the update/patch/preload flow is available for this region. Regions whose CDN
+    /// endpoints have not been validated end-to-end keep it disabled.
+    /// </summary>
+    protected virtual bool SupportsPatchAndPreload => true;
+
     [field: AllowNull, MaybeNull]
     public override string GameName => field ??= "Wuthering Waves";
 
@@ -137,7 +143,7 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
     {
         get => field ??= new WuwaGameManager(ExecutableName, ApiResponseUrl, ApiResponseAssetUrl, AuthenticationHash,
             CurrentTag, Hash1, AreApiParametersEncrypted, ThirdPartySdkFolderName, SdkMarkerFileName,
-            LauncherGameDirectoryName);
+            LauncherGameDirectoryName, SupportsPatchAndPreload);
         set;
     }
 

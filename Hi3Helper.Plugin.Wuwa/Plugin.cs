@@ -16,7 +16,6 @@ public partial class WuwaPlugin : PluginBase
     // Index 0 is the region shown first, so the mainland China region leads for this fork.
     private static readonly IPluginPresetConfig[] PresetConfigInstances = [new WuwaCnPresetConfig(), new WuwaGlobalPresetConfig(), new WuwaSteamPresetConfig(), new WuwaEpicPresetConfig()];
     private static DateTime _pluginCreationDate = new(2025, 07, 20, 05, 06, 0, DateTimeKind.Utc);
-    private static IPluginSelfUpdate? _selfUpdaterInstance;
 
     public override void GetPluginName(out string result) => result = "Wuthering Waves Plugin";
 
@@ -41,7 +40,15 @@ public partial class WuwaPlugin : PluginBase
         presetConfig = PresetConfigInstances[index];
     }
 
-    public override void GetPluginSelfUpdater(out IPluginSelfUpdate selfUpdate) => selfUpdate = _selfUpdaterInstance ??= new WuwaPluginSelfUpdate();
+    /// <summary>
+    /// Self-update is intentionally left unwired for this build.
+    /// <br/>
+    /// The self-updater published by the upstream project points to Collapse's in-house plugin CDN
+    /// (<c>cl-cdn/inhouse-plugin/wuwa/</c>), which only hosts the official build. Running it would
+    /// replace this build and silently drop the mainland China region, so <c>null</c> is returned
+    /// and the launcher skips the check (<c>WuwaPluginSelfUpdate</c> is kept only for reference).
+    /// </summary>
+    public override void GetPluginSelfUpdater(out IPluginSelfUpdate? selfUpdate) => selfUpdate = null;
 
     private string? _getPluginAppIconUrl;
 

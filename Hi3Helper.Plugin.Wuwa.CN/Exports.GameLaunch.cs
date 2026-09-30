@@ -3,12 +3,14 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Hi3Helper.Plugin.Core.Management.PresetConfig;
 using Hi3Helper.Plugin.Core.Utility;
 using Hi3Helper.Plugin.Wuwa.CN.Management;
 using Hi3Helper.Plugin.Wuwa.CN.Management.PresetConfig;
+using Hi3Helper.Plugin.Wuwa.CN.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace Hi3Helper.Plugin.Wuwa.CN;
@@ -75,7 +77,7 @@ public partial class Exports
         string? startingExecutablePath = null;
         string? gameExecutablePath = null;
         if (!TryGetStartingExecutablePath(context, out startingExecutablePath)
-            && !TryGetStartingExecutablePath(context, out gameExecutablePath))
+            && !TryGetGameExecutablePath(context, out gameExecutablePath))
             return true;
 
         using var process = FindExecutableProcess(startingExecutablePath);
@@ -101,7 +103,7 @@ public partial class Exports
             string? startingExecutablePath = null;
             string? gameExecutablePath = null;
             if (!TryGetStartingExecutablePath(context, out startingExecutablePath)
-                && !TryGetStartingExecutablePath(context, out gameExecutablePath))
+                && !TryGetGameExecutablePath(context, out gameExecutablePath))
                 return true;
 
             using var process = FindExecutableProcess(startingExecutablePath);
@@ -145,11 +147,21 @@ public partial class Exports
         Process? returnProcess = null;
 
         foreach (var process in processes)
-            if (process.MainModule?.FileName.StartsWith(executableDirPath, StringComparison.OrdinalIgnoreCase) ?? false)
+        {
+            try
             {
-                returnProcess = process;
-                break;
+                if (process.MainModule?.FileName?.StartsWith(executableDirPath, StringComparison.OrdinalIgnoreCase) ?? false)
+                {
+                    returnProcess = process;
+                    break;
+                }
             }
+            catch (Exception)
+            {
+                // Access to the main module can be denied for processes running with a higher
+                // integrity level. Such a process can simply not be ours, so skip it.
+            }
+        }
 
         try
         {
@@ -224,14 +236,34 @@ public partial class Exports
         process = null;
         if (!TryGetStartingExecutablePath(context, out var startingExecutablePath)) return false;
 
-        var startInfo = string.IsNullOrEmpty(startArgument)
+        // Starting from Wuthering Waves 3.7, the client refuses to boot unless the launcher tells it
+        // which tiered resource package (SD/HD/UHD) is installed. Resolve it from the game directory
+        // and append the switch, unless the user already provided one.
+        TryGetGamePath(context, out var gamePath);
+        var finalStartArgument = WuwaResourceTier.BuildStartArguments(gamePath, startArgument);
+
+        var startInfo = string.IsNullOrEmpty(finalStartArgument)
             ? new ProcessStartInfo(startingExecutablePath)
-            : new ProcessStartInfo(startingExecutablePath, startArgument);
+            : new ProcessStartInfo(startingExecutablePath, finalStartArgument);
 
         process = new Process
         {
             StartInfo = startInfo
         };
+        return true;
+    }
+
+    private static bool TryGetGamePath(GameManagerExtension.RunGameFromGameManagerContext context,
+        [NotNullWhen(true)] out string? gamePath)
+    {
+        gamePath = null;
+        if (context is not { GameManager: WuwaGameManager dnaGameManager }) return false;
+
+        dnaGameManager.GetGamePath(out var currentGamePath);
+        if (string.IsNullOrEmpty(currentGamePath)) return false;
+
+        currentGamePath.NormalizePathInplace();
+        gamePath = currentGamePath;
         return true;
     }
 
@@ -247,31 +279,71 @@ public partial class Exports
             string.IsNullOrEmpty(gameLogFileName))
             return;
 
-        var gameLogPath = Path.Combine(gameAppDataPath, gameLogFileName);
-        await Task.Delay(250, token);
-
-        var retry = 5;
-        while (!File.Exists(gameLogPath) && retry >= 0)
-        {
-            // Delays for 5 seconds to wait the game log existence
-            await Task.Delay(1000, token);
-            --retry;
-        }
-
-        if (retry <= 0) return;
-
         var printCallback = context.PrintGameLogCallback;
+        if (printCallback == null) return;
 
-        await using var fileStream =
-            File.Open(gameLogPath, FileMode.OpenOrCreate, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(fileStream);
+        var gameLogPath = Path.Combine(gameAppDataPath, gameLogFileName);
+        var header = new byte[WuwaLogDecodeStream.EncryptedHeaderLength];
 
-        fileStream.Position = 0;
-        while (!token.IsCancellationRequested)
+        try
         {
-            while (await reader.ReadLineAsync(token) is { } line) PassStringLineToCallback(printCallback, line);
+            while (!token.IsCancellationRequested)
+            {
+                while (!File.Exists(gameLogPath))
+                    await Task.Delay(250, token);
 
-            await Task.Delay(250, token);
+                try
+                {
+                    await using var fileStream = new FileStream(gameLogPath, FileMode.Open, FileAccess.Read,
+                        FileShare.ReadWrite | FileShare.Delete, 4096,
+                        FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+                    // The client writes obfuscated logs since 3.x, so sniff the header first and
+                    // wrap the stream in a decoder when needed.
+                    var headerBytesRead = 0;
+                    while (headerBytesRead < header.Length)
+                    {
+                        var read = await fileStream.ReadAsync(header.AsMemory(headerBytesRead), token);
+                        if (read == 0)
+                        {
+                            await Task.Delay(100, token);
+                            continue;
+                        }
+
+                        headerBytesRead += read;
+                    }
+
+                    var isEncrypted = WuwaLogDecodeStream.IsEncryptedLogHeader(header);
+                    if (!isEncrypted) fileStream.Position = 0;
+
+                    using WuwaLogDecodeStream? decodeStream =
+                        isEncrypted ? new WuwaLogDecodeStream(fileStream) : null;
+                    Stream contentStream = (Stream?)decodeStream ?? fileStream;
+                    using var reader = new StreamReader(contentStream, Encoding.UTF8,
+                        detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: true);
+
+                    while (!token.IsCancellationRequested)
+                    {
+                        while (await reader.ReadLineAsync(token) is { } line)
+                            PassStringLineToCallback(printCallback, line);
+
+                        // Stop reading once the log has been rotated/truncated, so the outer loop can
+                        // pick up the freshly created file.
+                        var currentLog = new FileInfo(gameLogPath);
+                        if (!currentLog.Exists || currentLog.Length < fileStream.Position) break;
+
+                        await Task.Delay(250, token);
+                    }
+                }
+                catch (IOException) when (!token.IsCancellationRequested)
+                {
+                    await Task.Delay(250, token);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // Expected when the game exits.
         }
 
         return;

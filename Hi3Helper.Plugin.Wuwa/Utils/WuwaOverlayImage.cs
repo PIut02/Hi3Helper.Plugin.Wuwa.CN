@@ -48,10 +48,16 @@ internal static class WuwaOverlayImage
         /// The values below reproduce that geometry once the game area is mapped onto a 16:9 window:
         /// no horizontal cropping happens there, so the left ratio carries over directly, while the
         /// vertical ratio is compensated for the 2.8% the taller canvases lose at the top and bottom.
+        /// <br/><br/>
+        /// The lockup is drawn slightly larger than the reference (8% of the canvas instead of about
+        /// 6.8%, i.e. 10% of the game area's height once mapped onto a 16:9 window) because the game's
+        /// API ships no campaign text block to fill the column underneath it, so the logo has to carry
+        /// the composition on its own. It grows downwards from the reference's top edge, keeping the
+        /// 10% / 7.2% column intact.
         /// The title art is moved far enough left that the social media panel (~4% of the window
         /// width) no longer covers it.
         /// </summary>
-        internal static OverlayLayout Default => new(0.07f, 0.10f, 0.095f, 0.08f);
+        internal static OverlayLayout Default => new(0.07f, 0.10f, 0.095f, 0.095f);
     }
 
     /// <summary>

@@ -407,8 +407,35 @@ internal partial class WuwaGameManager : GameManagerBase
         return InitAsyncInner(true, token);
     }
 
+    /// <summary>
+    /// The launcher frees every API instance it no longer uses (<c>IFree.Free()</c> is
+    /// <c>Dispose()</c>) and then asks the preset config for the interface again when the game is
+    /// selected anew. It may keep using the very instance it has already freed, so an initialization
+    /// has to be able to revive the instance — otherwise the second visit leaves a disposed object
+    /// behind and the initialization never completes, which the launcher reports as a connection
+    /// timeout.
+    /// </summary>
+    private void ReviveIfFreedByLauncher()
+    {
+        if (!IsDisposed)
+        {
+            return;
+        }
+
+        SharedStatic.InstanceLogger.LogWarning(
+            "[WuwaGameManager] The instance was previously freed by the launcher; reviving it for re-initialization.");
+
+        IsDisposed = false;
+        IsInitialized = false;
+        ApiResponseHttpClient = null!;
+        ApiDownloadHttpClient = null!;
+        ApiGameConfigResponse = null;
+    }
+
     internal async Task<int> InitAsyncInner(bool forceInit = false, CancellationToken token = default)
     {
+        long startTick = Environment.TickCount64;
+        ReviveIfFreedByLauncher();
         if (!forceInit && IsInitialized)
             return 0;
 
@@ -416,11 +443,11 @@ internal partial class WuwaGameManager : GameManagerBase
             $"{ApiResponseUrl}launcher/game/{GameTag.ResolveApiParameter(AreApiParametersEncrypted)}/" +
             $"{AuthenticationHash.ResolveApiParameter(AreApiParametersEncrypted)}/index.json";
 
-        using HttpResponseMessage configMessage =
-            await ApiResponseHttpClient.GetAsync(gameConfigUrl, HttpCompletionOption.ResponseHeadersRead, token);
+        using HttpResponseMessage configMessage = await ApiResponseHttpClient
+            .GetAsync(gameConfigUrl, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
         configMessage.EnsureSuccessStatusCode();
 
-        string jsonResponse = await configMessage.Content.ReadAsStringAsync(token);
+        string jsonResponse = await configMessage.Content.ReadAsStringAsync(token).ConfigureAwait(false);
 #if DEBUG
         SharedStatic.InstanceLogger.LogTrace("API Game Config response: {JsonResponse}", jsonResponse);
 #endif
@@ -488,6 +515,13 @@ internal partial class WuwaGameManager : GameManagerBase
         }
 
         await DiscoverHotfixAsync(token).ConfigureAwait(false);
+
+        long elapsedMs = Environment.TickCount64 - startTick;
+        if (elapsedMs >= 2000)
+        {
+            SharedStatic.InstanceLogger.LogWarning(
+                "[WuwaGameManager::InitAsyncInner] Initialization took {Elapsed} ms.", elapsedMs);
+        }
 
         return 0;
     }

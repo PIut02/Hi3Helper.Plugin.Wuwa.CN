@@ -54,9 +54,35 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
     private            WuwaApiResponseSocial? ApiResponseSocialMedia     { get; set; }
     private            WuwaApiResponseNews?   ApiResponseNewsAndCarousel { get; set; }
 
+    /// <summary>
+    /// The launcher frees every API instance it no longer uses (<c>IFree.Free()</c> is
+    /// <c>Dispose()</c>) and then asks the preset config for the interface again when the game is
+    /// selected anew. It may keep using the very instance it has already freed, so an initialization
+    /// has to be able to revive the instance — otherwise the second visit leaves a disposed object
+    /// behind and the initialization never completes, which the launcher reports as a connection
+    /// timeout.
+    /// </summary>
+    private void ReviveIfFreedByLauncher()
+    {
+        if (!IsDisposed)
+        {
+            return;
+        }
+
+        SharedStatic.InstanceLogger.LogWarning(
+            "[WuwaGlobalLauncherApiNews] The instance was previously freed by the launcher; reviving it for re-initialization.");
+
+        IsDisposed = false;
+        ApiResponseHttpClient = null!;
+        ApiDownloadHttpClient = null!;
+        ApiResponseSocialMedia = null;
+        ApiResponseNewsAndCarousel = null;
+    }
+
     protected override async Task<int> InitAsync(CancellationToken token)
     {
         long startTick = Environment.TickCount64;
+        ReviveIfFreedByLauncher();
 
         string requestSocialUrl = ApiResponseBaseUrl
                .CombineUrlFromString("launcher",
@@ -75,7 +101,7 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
         // Fetch social and news in parallel so one failing doesn't delay the other.
         await Task.WhenAll(
             FetchSocialAsync(requestSocialUrl, token),
-            FetchNewsAsync(requestNewsUrl, token));
+            FetchNewsAsync(requestNewsUrl, token)).ConfigureAwait(false);
 
         // Always logged (not DEBUG gated) so that a slow initialization can be diagnosed from the
         // launcher log, where it shows up as a plugin initialization timeout.
@@ -99,7 +125,7 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
                             WuwaApiResponseContext.Default.WuwaApiResponseSocial,
                             token);
 #else
-            await using var socialStream = await ApiResponseHttpClient.GetStreamAsync(url, token);
+            await using var socialStream = await ApiResponseHttpClient.GetStreamAsync(url, token).ConfigureAwait(false);
             ApiResponseSocialMedia = await System.Text.Json.JsonSerializer.DeserializeAsync(
                             socialStream,
                             WuwaApiResponseContext.Default.WuwaApiResponseSocial,
@@ -128,7 +154,7 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
                             WuwaApiResponseContext.Default.WuwaApiResponseNews,
                             token);
 #else
-            await using var newsStream = await ApiResponseHttpClient.GetStreamAsync(url, token);
+            await using var newsStream = await ApiResponseHttpClient.GetStreamAsync(url, token).ConfigureAwait(false);
             ApiResponseNewsAndCarousel = await System.Text.Json.JsonSerializer.DeserializeAsync(
                             newsStream,
                             WuwaApiResponseContext.Default.WuwaApiResponseNews,
@@ -292,7 +318,7 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
     protected override async Task DownloadAssetAsyncInner(HttpClient? client, string fileUrl, Stream outputStream,
         PluginDisposableMemory<byte> fileChecksum, PluginFiles.FileReadProgressDelegate? downloadProgress, CancellationToken token)
     {
-        await base.DownloadAssetAsyncInner(ApiDownloadHttpClient, fileUrl, outputStream, fileChecksum, downloadProgress, token);
+        await base.DownloadAssetAsyncInner(ApiDownloadHttpClient, fileUrl, outputStream, fileChecksum, downloadProgress, token).ConfigureAwait(false);
     }
 
     private static void InitializeEmpty(out nint handle, out int count, out bool isDisposable, out bool isAllocated)

@@ -153,7 +153,7 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
 
         try
         {
-            byte[] titleArt = await ApiResponseHttpClient.GetByteArrayAsync(sloganUrl, composeToken);
+            byte[] titleArt = await ApiResponseHttpClient.GetByteArrayAsync(sloganUrl, composeToken).ConfigureAwait(false);
 
             if (!WuwaOverlayImage.TryCompose(titleArt, WuwaLogoData.GetLockupPng(),
                                              WuwaOverlayImage.OverlayLayout.Default,
@@ -188,9 +188,52 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         }
     }
 
+    /// <summary>
+    /// The launcher frees every API instance it no longer uses (<c>IFree.Free()</c> is
+    /// <c>Dispose()</c>) and then asks the preset config for the interface again when the game is
+    /// selected anew. Depending on how the launcher caches that interface it may keep using the very
+    /// instance it has already freed, so an initialization has to be able to revive the instance —
+    /// otherwise the second visit leaves a disposed object behind and the initialization never
+    /// completes, which the launcher reports as a connection timeout.
+    /// </summary>
+    private void ReviveIfFreedByLauncher()
+    {
+        if (!IsDisposed)
+        {
+            return;
+        }
+
+        SharedStatic.InstanceLogger.LogWarning(
+            "[WuwaGlobalLauncherApiMedia] The instance was previously freed by the launcher; reviving it for re-initialization.");
+
+        IsDisposed = false;
+        ApiResponseHttpClient = null!;
+        ApiDownloadHttpClient = null!;
+        ApiResponse = null;
+        ComposedLogoOverlay = null;
+    }
+
+    /// <summary>
+    /// Logs a warning when a single initialization step took suspiciously long. The launcher only
+    /// grants about 10 seconds per plugin API initialization, so a slow step is what turns into a
+    /// "connection timeout" in its log.
+    /// </summary>
+    private static void WarnIfSlow(string step, long stepStartedTick, int thresholdMs = 2000)
+    {
+        long elapsed = Environment.TickCount64 - stepStartedTick;
+        if (elapsed < thresholdMs)
+        {
+            return;
+        }
+
+        SharedStatic.InstanceLogger.LogWarning(
+            "[WuwaGlobalLauncherApiMedia] Step '{Step}' took {Elapsed} ms.", step, elapsed);
+    }
+
     protected override async Task<int> InitAsync(CancellationToken token)
     {
         long startTick = Environment.TickCount64;
+        ReviveIfFreedByLauncher();
 
         string decodedAuthHash = authenticationHash.ResolveApiParameter(areParametersEncrypted);
         string decodedGameTag  = gameTag.ResolveApiParameter(areParametersEncrypted);
@@ -205,7 +248,8 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
             "[WuwaGlobalLauncherApiMedia::InitAsync] Fetching launcher-config: {Url}", launcherConfigUrl);
 #endif
 
-        using HttpResponseMessage configResponse = await ApiResponseHttpClient!.GetAsync(launcherConfigUrl, token);
+        using HttpResponseMessage configResponse = await ApiResponseHttpClient!
+            .GetAsync(launcherConfigUrl, token).ConfigureAwait(false);
         if (!configResponse.IsSuccessStatusCode)
         {
             SharedStatic.InstanceLogger.LogError(
@@ -213,7 +257,9 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         }
         configResponse.EnsureSuccessStatusCode();
 
-        string configJson = await configResponse.Content.ReadAsStringAsync(token);
+        WarnIfSlow("launcher-config", startTick);
+
+        string configJson = await configResponse.Content.ReadAsStringAsync(token).ConfigureAwait(false);
         SharedStatic.InstanceLogger.LogTrace("[WuwaGlobalLauncherApiMedia::InitAsync] Launcher-config response: {Json}", configJson);
 
         WuwaApiResponseLauncherConfig? launcherConfig = JsonSerializer.Deserialize(
@@ -239,7 +285,8 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
             "[WuwaGlobalLauncherApiMedia::InitAsync] Fetching wallpaper: {Url}", wallpaperUrl);
 #endif
 
-        using HttpResponseMessage wallpaperResponse = await ApiResponseHttpClient.GetAsync(wallpaperUrl, token);
+        using HttpResponseMessage wallpaperResponse = await ApiResponseHttpClient
+            .GetAsync(wallpaperUrl, token).ConfigureAwait(false);
         if (!wallpaperResponse.IsSuccessStatusCode)
         {
             SharedStatic.InstanceLogger.LogError(
@@ -247,13 +294,15 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         }
         wallpaperResponse.EnsureSuccessStatusCode();
 
-        string wallpaperJson = await wallpaperResponse.Content.ReadAsStringAsync(token);
+        string wallpaperJson = await wallpaperResponse.Content.ReadAsStringAsync(token).ConfigureAwait(false);
         SharedStatic.InstanceLogger.LogTrace("[WuwaGlobalLauncherApiMedia::InitAsync] Wallpaper response: {Json}", wallpaperJson);
+
+        WarnIfSlow("wallpaper", startTick);
 
         ApiResponse = JsonSerializer.Deserialize(wallpaperJson, WuwaApiResponseContext.Default.WuwaApiResponseMedia)
                       ?? throw new NullReferenceException("Wallpaper API returned a null response!");
 
-        await TryComposeLogoOverlayAsync(token);
+        await TryComposeLogoOverlayAsync(token).ConfigureAwait(false);
 
         // Always logged (not DEBUG gated) so that a slow initialization can be diagnosed from the
         // launcher log, where it shows up as a plugin initialization timeout.
@@ -267,7 +316,7 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
     protected override async Task DownloadAssetAsyncInner(HttpClient? client, string fileUrl, Stream outputStream,
         PluginDisposableMemory<byte> fileChecksum, PluginFiles.FileReadProgressDelegate? downloadProgress, CancellationToken token)
     {
-        await base.DownloadAssetAsyncInner(ApiDownloadHttpClient, fileUrl, outputStream, fileChecksum, downloadProgress, token);
+        await base.DownloadAssetAsyncInner(ApiDownloadHttpClient, fileUrl, outputStream, fileChecksum, downloadProgress, token).ConfigureAwait(false);
     }
 
     public override void Dispose()

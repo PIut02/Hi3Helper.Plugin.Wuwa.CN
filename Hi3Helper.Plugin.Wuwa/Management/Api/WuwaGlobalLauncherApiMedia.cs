@@ -103,12 +103,75 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         {
             PluginDisposableMemory<LauncherPathEntry> logoEntries = PluginDisposableMemory<LauncherPathEntry>.Alloc();
             ref LauncherPathEntry entry = ref logoEntries[0];
-            entry.Write(ApiResponse.SloganUrl, Span<byte>.Empty);
+
+            // Prefer the locally composed overlay (see TryComposeLogoOverlayAsync): it carries both the
+            // wordmark and a title art that is moved out from underneath the social media panel. It is
+            // handed over as base64 because the launcher renders the overlay as a single centered
+            // UniformToFill layer and offers no positioning of its own.
+            entry.Write(ComposedLogoOverlay ?? ApiResponse.SloganUrl, Span<byte>.Empty);
 
             isDisposable = logoEntries.IsDisposable == 1;
             handle = logoEntries.AsSafePointer();
             count = logoEntries.Length;
             isAllocated = true;
+        }
+    }
+
+    /// <summary>
+    /// Wordmark shown in the top-left corner by the official launcher. It is not part of the game's
+    /// API response, so it is taken from Collapse's own in-house plugin assets — the same file the
+    /// plugin already advertises as its zone logo.
+    /// </summary>
+    private const string WordmarkUrl = "https://cdn.collapselauncher.com/cl-cdn/inhouse-plugin/wuwa/wuthering-waves-logo.png";
+
+    /// <summary>
+    /// Base64 encoded composed overlay, or <c>null</c> when composing was not possible and the raw
+    /// API artwork should be used instead.
+    /// </summary>
+    private string? ComposedLogoOverlay { get; set; }
+
+    /// <summary>
+    /// Downloads the title art and the wordmark and merges them into a single overlay image.
+    /// <br/>
+    /// Anything that goes wrong here is non-fatal: the overlay simply falls back to the untouched
+    /// API artwork.
+    /// </summary>
+    private async Task TryComposeLogoOverlayAsync(CancellationToken token)
+    {
+        string? sloganUrl = ApiResponse?.SloganUrl;
+        if (string.IsNullOrEmpty(sloganUrl))
+        {
+            return;
+        }
+
+        try
+        {
+            byte[] titleArt = await ApiResponseHttpClient.GetByteArrayAsync(sloganUrl, token);
+            byte[] wordmark = await ApiResponseHttpClient.GetByteArrayAsync(WordmarkUrl, token);
+
+            if (!WuwaOverlayImage.TryCompose(titleArt, wordmark, WuwaOverlayImage.OverlayLayout.Default,
+                                             out byte[] composed, out string failureReason))
+            {
+                SharedStatic.InstanceLogger.LogDebug(
+                    "[WuwaGlobalLauncherApiMedia::TryComposeLogoOverlay] Keeping the original artwork: {Reason}",
+                    failureReason);
+                return;
+            }
+
+            ComposedLogoOverlay = Convert.ToBase64String(composed);
+            SharedStatic.InstanceLogger.LogDebug(
+                "[WuwaGlobalLauncherApiMedia::TryComposeLogoOverlay] Composed logo overlay ({Size} bytes).",
+                composed.Length);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SharedStatic.InstanceLogger.LogWarning(
+                "[WuwaGlobalLauncherApiMedia::TryComposeLogoOverlay] Failed to compose the logo overlay, keeping the original artwork: {Error}",
+                ex.Message);
         }
     }
 
@@ -175,6 +238,8 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         ApiResponse = JsonSerializer.Deserialize(wallpaperJson, WuwaApiResponseContext.Default.WuwaApiResponseMedia)
                       ?? throw new NullReferenceException("Wallpaper API returned a null response!");
 
+        await TryComposeLogoOverlayAsync(token);
+
         return 0;
     }
 
@@ -195,6 +260,7 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
             ApiDownloadHttpClient.Dispose();
 
             ApiResponse = null;
+            ComposedLogoOverlay = null;
             base.Dispose();
         }
     }

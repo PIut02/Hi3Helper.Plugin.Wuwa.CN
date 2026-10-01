@@ -118,23 +118,18 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
     }
 
     /// <summary>
-    /// Wordmark shown in the top-left corner by the official launcher. It is not part of the game's
-    /// API response, so it is taken from Collapse's own in-house plugin assets — the same file the
-    /// plugin already advertises as its zone logo.
-    /// </summary>
-    private const string WordmarkUrl = "https://cdn.collapselauncher.com/cl-cdn/inhouse-plugin/wuwa/wuthering-waves-logo.png";
-
-    /// <summary>
     /// Base64 encoded composed overlay, or <c>null</c> when composing was not possible and the raw
     /// API artwork should be used instead.
     /// </summary>
     private string? ComposedLogoOverlay { get; set; }
 
     /// <summary>
-    /// Downloads the title art and the wordmark and merges them into a single overlay image.
+    /// Merges the title art served by the game's API with the logo lockup of the launcher's current
+    /// UI language into a single overlay image.
     /// <br/>
-    /// Anything that goes wrong here is non-fatal: the overlay simply falls back to the untouched
-    /// API artwork.
+    /// The lockup is embedded in the plugin (<see cref="WuwaLogoData"/>) rather than fetched from a
+    /// CDN, so no region specific artwork host is involved. Anything that goes wrong here is
+    /// non-fatal: the overlay simply falls back to the untouched API artwork.
     /// </summary>
     private async Task TryComposeLogoOverlayAsync(CancellationToken token)
     {
@@ -147,9 +142,9 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         try
         {
             byte[] titleArt = await ApiResponseHttpClient.GetByteArrayAsync(sloganUrl, token);
-            byte[] wordmark = await ApiResponseHttpClient.GetByteArrayAsync(WordmarkUrl, token);
 
-            if (!WuwaOverlayImage.TryCompose(titleArt, wordmark, WuwaOverlayImage.OverlayLayout.Default,
+            if (!WuwaOverlayImage.TryCompose(titleArt, WuwaLogoData.GetLockupPng(),
+                                             WuwaOverlayImage.OverlayLayout.Default,
                                              out byte[] composed, out string failureReason))
             {
                 SharedStatic.InstanceLogger.LogDebug(

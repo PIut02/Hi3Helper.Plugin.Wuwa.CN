@@ -31,19 +31,23 @@ internal static class WuwaOverlayImage
     /// </param>
     /// <param name="WordmarkXRatio">Left edge of the wordmark.</param>
     /// <param name="WordmarkYRatio">Top edge of the wordmark.</param>
-    /// <param name="WordmarkWidthRatio">Width of the wordmark.</param>
+    /// <param name="WordmarkHeightRatio">
+    /// Height of the wordmark. The width follows from the artwork's aspect ratio, so that both the
+    /// stacked Chinese lockups and the wide latin wordmark end up optically the same size.
+    /// </param>
     internal readonly record struct OverlayLayout(float TitleShiftRatio,
                                                  float WordmarkXRatio,
                                                  float WordmarkYRatio,
-                                                 float WordmarkWidthRatio)
+                                                 float WordmarkHeightRatio)
     {
         /// <summary>
-        /// Layout tuned against 16:9 and 16:10 windows. The vertical position keeps the wordmark
-        /// below the region that a 21:9 window crops away (about 15% of the canvas height) and below
-        /// the launcher's own title bar, while the title art is moved far enough left that the social
-        /// media panel (~4% of the window width) no longer covers it.
+        /// Layout tuned against 16:9 and 16:10 windows. The wordmark's height matches what the
+        /// official launcher draws (roughly 7% of the game area's height), its vertical position
+        /// keeps it below the launcher's own title bar and below the region that a 21:9 window crops
+        /// away (about 15% of the canvas height), while the title art is moved far enough left that
+        /// the social media panel (~4% of the window width) no longer covers it.
         /// </summary>
-        internal static OverlayLayout Default => new(0.07f, 0.045f, 0.15f, 0.225f);
+        internal static OverlayLayout Default => new(0.07f, 0.045f, 0.15f, 0.07f);
     }
 
     /// <summary>
@@ -83,9 +87,10 @@ internal static class WuwaOverlayImage
                 }
             }
 
-            // 2. Draw the wordmark into the top-left corner.
-            int targetWidth = Math.Max(1, (int)MathF.Round(width * layout.WordmarkWidthRatio));
-            int targetHeight = Math.Max(1, (int)MathF.Round(markHeight * (float)targetWidth / markWidth));
+            // 2. Draw the wordmark into the top-left corner, sized by its height so that the stacked
+            //    Chinese lockup and the wide latin wordmark look equally large.
+            int targetHeight = Math.Max(1, (int)MathF.Round(height * layout.WordmarkHeightRatio));
+            int targetWidth = Math.Max(1, (int)MathF.Round(markWidth * (float)targetHeight / markHeight));
             int targetX = (int)MathF.Round(width * layout.WordmarkXRatio);
             int targetY = (int)MathF.Round(height * layout.WordmarkYRatio);
 

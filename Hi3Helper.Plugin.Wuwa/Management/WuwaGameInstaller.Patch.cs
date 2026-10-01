@@ -177,11 +177,29 @@ namespace Hi3Helper.Plugin.Wuwa.Management
         /// Detects when the game was updated externally and installed files already match
         /// the live API target version, then syncs local version metadata without downloading.
         /// </summary>
+        /// <summary>
+        /// Hard ceiling for the disk version sync. The launcher aborts a preset initialization after
+        /// roughly ten seconds, so this stays well below it.
+        /// </summary>
+        private const int DiskSyncBudgetSeconds = 5;
+
         internal async Task TrySyncVersionFromExternalUpdateAsync(CancellationToken token)
         {
             var manager = GameManager as WuwaGameManager;
             if (manager == null)
                 return;
+
+            // Belongs to the patching feature. The launcher only gives a preset about 10 seconds to
+            // initialize, while the disk preflight below downloads a patch index and hashes every
+            // installed game file - far more than that. Presets without patching support (the
+            // mainland one) must therefore skip it entirely, and the remaining regions get a hard
+            // time budget so a slow run can never turn into a launcher-side "connection timeout".
+            if (!manager.SupportsPatchAndPreload)
+            {
+                SharedStatic.InstanceLogger.LogInformation(
+                    "[WuwaGameInstaller::TrySyncVersionFromExternalUpdateAsync] Patching is not supported for this preset; skipping disk sync.");
+                return;
+            }
 
             manager.IsGameInstalled(out bool isInstalled);
             if (!isInstalled || manager.DEBUG_AllowDowngrade || manager.DEBUG_SkipPreflight ||
@@ -208,16 +226,32 @@ namespace Hi3Helper.Plugin.Wuwa.Management
             if (string.IsNullOrEmpty(patchIndexUrl))
                 return;
 
-            var patchIndex = await DownloadPatchIndexAsync(patchIndexUrl, token).ConfigureAwait(false);
-            if (patchIndex == null || patchIndex.GroupInfos.Length == 0)
-                return;
+            using CancellationTokenSource budget = CancellationTokenSource.CreateLinkedTokenSource(token);
+            budget.CancelAfter(TimeSpan.FromSeconds(DiskSyncBudgetSeconds));
+            CancellationToken budgetToken = budget.Token;
 
-            manager.GetGamePath(out string? installPath);
-            if (string.IsNullOrEmpty(installPath))
-                return;
+            WuwaPatchPreflight.Result preflight;
+            try
+            {
+                WuwaApiResponsePatchIndex? patchIndex =
+                    await DownloadPatchIndexAsync(patchIndexUrl, budgetToken).ConfigureAwait(false);
+                if (patchIndex == null || patchIndex.GroupInfos.Length == 0)
+                    return;
 
-            var preflight = await WuwaPatchPreflight.VerifyInstalledFilesAsync(
-                installPath, patchIndex, token).ConfigureAwait(false);
+                manager.GetGamePath(out string? installPath);
+                if (string.IsNullOrEmpty(installPath))
+                    return;
+
+                preflight = await WuwaPatchPreflight.VerifyInstalledFilesAsync(
+                    installPath, patchIndex, budgetToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                SharedStatic.InstanceLogger.LogWarning(
+                    "[WuwaGameInstaller::TrySyncVersionFromExternalUpdateAsync] Disk sync exceeded its {Budget}s budget and was skipped. It will be retried on the next launch.",
+                    DiskSyncBudgetSeconds);
+                return;
+            }
 
             if (!WuwaPatchPreflight.AllFilesMatch(preflight))
             {

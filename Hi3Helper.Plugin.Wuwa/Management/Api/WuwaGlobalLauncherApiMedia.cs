@@ -189,31 +189,6 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
     }
 
     /// <summary>
-    /// The launcher frees every API instance it no longer uses (<c>IFree.Free()</c> is
-    /// <c>Dispose()</c>) and then asks the preset config for the interface again when the game is
-    /// selected anew. Depending on how the launcher caches that interface it may keep using the very
-    /// instance it has already freed, so an initialization has to be able to revive the instance —
-    /// otherwise the second visit leaves a disposed object behind and the initialization never
-    /// completes, which the launcher reports as a connection timeout.
-    /// </summary>
-    private void ReviveIfFreedByLauncher()
-    {
-        if (!IsDisposed)
-        {
-            return;
-        }
-
-        SharedStatic.InstanceLogger.LogWarning(
-            "[WuwaGlobalLauncherApiMedia] The instance was previously freed by the launcher; reviving it for re-initialization.");
-
-        IsDisposed = false;
-        ApiResponseHttpClient = null!;
-        ApiDownloadHttpClient = null!;
-        ApiResponse = null;
-        ComposedLogoOverlay = null;
-    }
-
-    /// <summary>
     /// Logs a warning when a single initialization step took suspiciously long. The launcher only
     /// grants about 10 seconds per plugin API initialization, so a slow step is what turns into a
     /// "connection timeout" in its log.
@@ -234,7 +209,6 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
     {
         long startTick = Environment.TickCount64;
         SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiMedia::InitAsync] ENTER");
-        ReviveIfFreedByLauncher();
 
         string decodedAuthHash = authenticationHash.ResolveApiParameter(areParametersEncrypted);
         string decodedGameTag  = gameTag.ResolveApiParameter(areParametersEncrypted);
@@ -323,25 +297,16 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
     public override void Dispose()
     {
         if (IsDisposed)
-        {
             return;
-        }
 
         using (ThisInstanceLock.EnterScope())
         {
-            // DIAGNOSTIC TRIAL: the launcher frees the API instances when a game is unloaded, but it
-            // keeps using the very same instance when the game is selected again. Calling into a
-            // half-destroyed instance is what makes the next initialization hang forever, so only the
-            // cached payload and the clients are dropped here and the instance itself stays usable.
-            SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiMedia] Free() called by the launcher; releasing caches but keeping the instance alive.");
+            ApiResponseHttpClient.Dispose();
+            ApiDownloadHttpClient.Dispose();
 
             ApiResponse = null;
             ComposedLogoOverlay = null;
-
-            ApiResponseHttpClient.Dispose();
-            ApiResponseHttpClient = null!;
-            ApiDownloadHttpClient.Dispose();
-            ApiDownloadHttpClient = null!;
+            base.Dispose();
         }
     }
 }

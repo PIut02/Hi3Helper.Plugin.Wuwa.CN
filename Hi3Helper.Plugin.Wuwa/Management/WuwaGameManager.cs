@@ -121,7 +121,7 @@ internal partial class WuwaGameManager : GameManagerBase
     /// been validated yet keep it disabled, so that an unverified patch run can never touch an
     /// existing game installation.
     /// </summary>
-    private bool SupportsPatchAndPreload { get; }
+    internal bool SupportsPatchAndPreload { get; }
 
     private WuwaApiResponseGameConfig? ApiGameConfigResponse { get; set; }
     private string CurrentGameExecutableByPreset { get; }
@@ -380,23 +380,15 @@ internal partial class WuwaGameManager : GameManagerBase
     public override void Dispose()
     {
         if (IsDisposed)
-        {
             return;
-        }
 
         using (ThisInstanceLock.EnterScope())
         {
-            // DIAGNOSTIC TRIAL: keep the instance usable after the launcher frees it — the launcher
-            // reuses the very same instance when the game is selected again.
-            SharedStatic.InstanceLogger.LogWarning("[WuwaGameManager] Free() called by the launcher; releasing caches but keeping the instance alive.");
-
-            ApiGameConfigResponse = null;
-            IsInitialized = false;
-
-            ApiResponseHttpClient.Dispose();
-            ApiResponseHttpClient = null!;
             ApiDownloadHttpClient.Dispose();
             ApiDownloadHttpClient = null!;
+            ApiGameConfigResponse = null;
+
+            base.Dispose();
         }
     }
 
@@ -415,36 +407,10 @@ internal partial class WuwaGameManager : GameManagerBase
         return InitAsyncInner(true, token);
     }
 
-    /// <summary>
-    /// The launcher frees every API instance it no longer uses (<c>IFree.Free()</c> is
-    /// <c>Dispose()</c>) and then asks the preset config for the interface again when the game is
-    /// selected anew. It may keep using the very instance it has already freed, so an initialization
-    /// has to be able to revive the instance — otherwise the second visit leaves a disposed object
-    /// behind and the initialization never completes, which the launcher reports as a connection
-    /// timeout.
-    /// </summary>
-    private void ReviveIfFreedByLauncher()
-    {
-        if (!IsDisposed)
-        {
-            return;
-        }
-
-        SharedStatic.InstanceLogger.LogWarning(
-            "[WuwaGameManager] The instance was previously freed by the launcher; reviving it for re-initialization.");
-
-        IsDisposed = false;
-        IsInitialized = false;
-        ApiResponseHttpClient = null!;
-        ApiDownloadHttpClient = null!;
-        ApiGameConfigResponse = null;
-    }
-
     internal async Task<int> InitAsyncInner(bool forceInit = false, CancellationToken token = default)
     {
         long startTick = Environment.TickCount64;
         SharedStatic.InstanceLogger.LogWarning("[WuwaGameManager::InitAsyncInner] ENTER (forceInit={Force})", forceInit);
-        ReviveIfFreedByLauncher();
         if (!forceInit && IsInitialized)
             return 0;
 
@@ -534,6 +500,16 @@ internal partial class WuwaGameManager : GameManagerBase
     private async Task DiscoverHotfixAsync(CancellationToken token)
     {
         AvailableHotfixPatch = null;
+
+        // Hotfix discovery belongs to the patching feature: when the preset does not support
+        // patching (the mainland preset does not), it must not reach out to the hotfix CDN.
+        if (!SupportsPatchAndPreload)
+        {
+            SharedStatic.InstanceLogger.LogInformation(
+                "[WuwaGameManager::DiscoverHotfixAsync] Patching is not supported for this preset; skipping.");
+            return;
+        }
+
         if (!IsInstalled || string.IsNullOrEmpty(CurrentGameInstallPath) ||
             CurrentGameVersion != ApiGameVersion)
         {

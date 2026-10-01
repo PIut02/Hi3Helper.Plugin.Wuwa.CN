@@ -54,36 +54,10 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
     private            WuwaApiResponseSocial? ApiResponseSocialMedia     { get; set; }
     private            WuwaApiResponseNews?   ApiResponseNewsAndCarousel { get; set; }
 
-    /// <summary>
-    /// The launcher frees every API instance it no longer uses (<c>IFree.Free()</c> is
-    /// <c>Dispose()</c>) and then asks the preset config for the interface again when the game is
-    /// selected anew. It may keep using the very instance it has already freed, so an initialization
-    /// has to be able to revive the instance — otherwise the second visit leaves a disposed object
-    /// behind and the initialization never completes, which the launcher reports as a connection
-    /// timeout.
-    /// </summary>
-    private void ReviveIfFreedByLauncher()
-    {
-        if (!IsDisposed)
-        {
-            return;
-        }
-
-        SharedStatic.InstanceLogger.LogWarning(
-            "[WuwaGlobalLauncherApiNews] The instance was previously freed by the launcher; reviving it for re-initialization.");
-
-        IsDisposed = false;
-        ApiResponseHttpClient = null!;
-        ApiDownloadHttpClient = null!;
-        ApiResponseSocialMedia = null;
-        ApiResponseNewsAndCarousel = null;
-    }
-
     protected override async Task<int> InitAsync(CancellationToken token)
     {
         long startTick = Environment.TickCount64;
         SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiNews::InitAsync] ENTER");
-        ReviveIfFreedByLauncher();
 
         string requestSocialUrl = ApiResponseBaseUrl
                .CombineUrlFromString("launcher",
@@ -336,23 +310,15 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
     public override void Dispose()
     {
         if (IsDisposed)
-        {
             return;
-        }
 
         using (ThisInstanceLock.EnterScope())
         {
-            // DIAGNOSTIC TRIAL: see WuwaGlobalLauncherApiMedia.Dispose — keep the instance usable after
-            // the launcher frees it, because the launcher reuses the same instance on the next visit.
-            SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiNews] Free() called by the launcher; releasing caches but keeping the instance alive.");
+            ApiDownloadHttpClient.Dispose();
+            ApiResponseHttpClient = null!;
 
             ApiResponseSocialMedia = null;
-            ApiResponseNewsAndCarousel = null;
-
-            ApiResponseHttpClient.Dispose();
-            ApiResponseHttpClient = null!;
-            ApiDownloadHttpClient.Dispose();
-            ApiDownloadHttpClient = null!;
+            base.Dispose();
         }
     }
     

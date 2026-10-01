@@ -41,13 +41,17 @@ internal static class WuwaOverlayImage
                                                  float WordmarkHeightRatio)
     {
         /// <summary>
-        /// Layout tuned against 16:9 and 16:10 windows. The wordmark's height matches what the
-        /// official launcher draws (roughly 7% of the game area's height), its vertical position
-        /// keeps it below the launcher's own title bar and below the region that a 21:9 window crops
-        /// away (about 15% of the canvas height), while the title art is moved far enough left that
-        /// the social media panel (~4% of the window width) no longer covers it.
+        /// Layout matched against the overlay artwork Collapse itself ships for its built-in games.
+        /// <br/><br/>
+        /// Those overlays are 2560x1440 (exactly 16:9) canvases whose game logo sits at
+        /// <b>left 10.0% / top 7.2%</b> and measures about <b>5.9% wide and 8.3% tall</b> of the canvas.
+        /// The values below reproduce that geometry once the game area is mapped onto a 16:9 window:
+        /// no horizontal cropping happens there, so the left ratio carries over directly, while the
+        /// vertical ratio is compensated for the 2.8% the taller canvases lose at the top and bottom.
+        /// The title art is moved far enough left that the social media panel (~4% of the window
+        /// width) no longer covers it.
         /// </summary>
-        internal static OverlayLayout Default => new(0.07f, 0.045f, 0.15f, 0.07f);
+        internal static OverlayLayout Default => new(0.07f, 0.10f, 0.095f, 0.08f);
     }
 
     /// <summary>

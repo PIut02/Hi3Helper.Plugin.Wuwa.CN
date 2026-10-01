@@ -82,6 +82,7 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
     protected override async Task<int> InitAsync(CancellationToken token)
     {
         long startTick = Environment.TickCount64;
+        SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiNews::InitAsync] ENTER");
         ReviveIfFreedByLauncher();
 
         string requestSocialUrl = ApiResponseBaseUrl
@@ -99,14 +100,17 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
                         localeFileName);
 
         // Fetch social and news in parallel so one failing doesn't delay the other.
+        long fetchTick = Environment.TickCount64;
         await Task.WhenAll(
             FetchSocialAsync(requestSocialUrl, token),
             FetchNewsAsync(requestNewsUrl, token)).ConfigureAwait(false);
+        SharedStatic.InstanceLogger.LogWarning(
+            "[WuwaGlobalLauncherApiNews::InitAsync] fetches done in {Elapsed} ms.", Environment.TickCount64 - fetchTick);
 
         // Always logged (not DEBUG gated) so that a slow initialization can be diagnosed from the
         // launcher log, where it shows up as a plugin initialization timeout.
-        SharedStatic.InstanceLogger.LogInformation(
-            "[WuwaGlobalLauncherApiNews::InitAsync] News ready in {Elapsed} ms (social: {HasSocial}, news: {HasNews}).",
+        SharedStatic.InstanceLogger.LogWarning(
+            "[WuwaGlobalLauncherApiNews::InitAsync] EXIT ok in {Elapsed} ms (social: {HasSocial}, news: {HasNews}).",
             Environment.TickCount64 - startTick, ApiResponseSocialMedia != null, ApiResponseNewsAndCarousel != null);
 
         return 0;
@@ -332,15 +336,23 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
     public override void Dispose()
     {
         if (IsDisposed)
+        {
             return;
+        }
 
         using (ThisInstanceLock.EnterScope())
         {
-            ApiDownloadHttpClient.Dispose();
-            ApiResponseHttpClient = null!;
+            // DIAGNOSTIC TRIAL: see WuwaGlobalLauncherApiMedia.Dispose — keep the instance usable after
+            // the launcher frees it, because the launcher reuses the same instance on the next visit.
+            SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiNews] Free() called by the launcher; releasing caches but keeping the instance alive.");
 
             ApiResponseSocialMedia = null;
-            base.Dispose();
+            ApiResponseNewsAndCarousel = null;
+
+            ApiResponseHttpClient.Dispose();
+            ApiResponseHttpClient = null!;
+            ApiDownloadHttpClient.Dispose();
+            ApiDownloadHttpClient = null!;
         }
     }
     

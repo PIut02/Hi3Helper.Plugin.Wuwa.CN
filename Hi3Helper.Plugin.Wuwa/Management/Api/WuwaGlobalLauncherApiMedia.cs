@@ -233,6 +233,7 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
     protected override async Task<int> InitAsync(CancellationToken token)
     {
         long startTick = Environment.TickCount64;
+        SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiMedia::InitAsync] ENTER");
         ReviveIfFreedByLauncher();
 
         string decodedAuthHash = authenticationHash.ResolveApiParameter(areParametersEncrypted);
@@ -306,8 +307,8 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
 
         // Always logged (not DEBUG gated) so that a slow initialization can be diagnosed from the
         // launcher log, where it shows up as a plugin initialization timeout.
-        SharedStatic.InstanceLogger.LogInformation(
-            "[WuwaGlobalLauncherApiMedia::InitAsync] Background ready in {Elapsed} ms (composed overlay: {HasComposedOverlay}).",
+        SharedStatic.InstanceLogger.LogWarning(
+            "[WuwaGlobalLauncherApiMedia::InitAsync] EXIT ok in {Elapsed} ms (composed overlay: {HasComposedOverlay}).",
             Environment.TickCount64 - startTick, ComposedLogoOverlay != null);
 
         return 0;
@@ -322,16 +323,25 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
     public override void Dispose()
     {
         if (IsDisposed)
+        {
             return;
+        }
 
         using (ThisInstanceLock.EnterScope())
         {
-            ApiResponseHttpClient.Dispose();
-            ApiDownloadHttpClient.Dispose();
+            // DIAGNOSTIC TRIAL: the launcher frees the API instances when a game is unloaded, but it
+            // keeps using the very same instance when the game is selected again. Calling into a
+            // half-destroyed instance is what makes the next initialization hang forever, so only the
+            // cached payload and the clients are dropped here and the instance itself stays usable.
+            SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiMedia] Free() called by the launcher; releasing caches but keeping the instance alive.");
 
             ApiResponse = null;
             ComposedLogoOverlay = null;
-            base.Dispose();
+
+            ApiResponseHttpClient.Dispose();
+            ApiResponseHttpClient = null!;
+            ApiDownloadHttpClient.Dispose();
+            ApiDownloadHttpClient = null!;
         }
     }
 }

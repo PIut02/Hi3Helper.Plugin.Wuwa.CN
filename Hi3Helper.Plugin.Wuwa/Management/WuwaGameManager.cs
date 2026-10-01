@@ -380,15 +380,23 @@ internal partial class WuwaGameManager : GameManagerBase
     public override void Dispose()
     {
         if (IsDisposed)
+        {
             return;
+        }
 
         using (ThisInstanceLock.EnterScope())
         {
+            // DIAGNOSTIC TRIAL: keep the instance usable after the launcher frees it — the launcher
+            // reuses the very same instance when the game is selected again.
+            SharedStatic.InstanceLogger.LogWarning("[WuwaGameManager] Free() called by the launcher; releasing caches but keeping the instance alive.");
+
+            ApiGameConfigResponse = null;
+            IsInitialized = false;
+
+            ApiResponseHttpClient.Dispose();
+            ApiResponseHttpClient = null!;
             ApiDownloadHttpClient.Dispose();
             ApiDownloadHttpClient = null!;
-            ApiGameConfigResponse = null;
-
-            base.Dispose();
         }
     }
 
@@ -435,6 +443,7 @@ internal partial class WuwaGameManager : GameManagerBase
     internal async Task<int> InitAsyncInner(bool forceInit = false, CancellationToken token = default)
     {
         long startTick = Environment.TickCount64;
+        SharedStatic.InstanceLogger.LogWarning("[WuwaGameManager::InitAsyncInner] ENTER (forceInit={Force})", forceInit);
         ReviveIfFreedByLauncher();
         if (!forceInit && IsInitialized)
             return 0;
@@ -516,12 +525,8 @@ internal partial class WuwaGameManager : GameManagerBase
 
         await DiscoverHotfixAsync(token).ConfigureAwait(false);
 
-        long elapsedMs = Environment.TickCount64 - startTick;
-        if (elapsedMs >= 2000)
-        {
-            SharedStatic.InstanceLogger.LogWarning(
-                "[WuwaGameManager::InitAsyncInner] Initialization took {Elapsed} ms.", elapsedMs);
-        }
+        SharedStatic.InstanceLogger.LogWarning(
+            "[WuwaGameManager::InitAsyncInner] EXIT ok in {Elapsed} ms.", Environment.TickCount64 - startTick);
 
         return 0;
     }

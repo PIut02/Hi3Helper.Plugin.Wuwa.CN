@@ -27,7 +27,7 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
     [field: AllowNull, MaybeNull]
     protected override HttpClient ApiResponseHttpClient
     {
-        get => field ??= WuwaUtils.CreateApiHttpClient(ApiResponseBaseUrl);
+        get => field ??= WuwaUtils.CreateApiHttpClient(ApiResponseBaseUrl, timeoutSeconds: WuwaUtils.ApiTimeoutSeconds);
         set;
     }
 
@@ -124,6 +124,12 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
     private string? ComposedLogoOverlay { get; set; }
 
     /// <summary>
+    /// How long the plugin is willing to spend on composing the overlay. The launcher only gives a
+    /// preset about 10 seconds to initialize, so this stays far below that.
+    /// </summary>
+    private const int ComposeTimeoutSeconds = 4;
+
+    /// <summary>
     /// Merges the title art served by the game's API with the logo lockup of the launcher's current
     /// UI language into a single overlay image.
     /// <br/>
@@ -139,9 +145,15 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
             return;
         }
 
+        // Composing is a bonus, not a requirement: keep it on a short leash so a slow endpoint can
+        // never hold up the launcher's plugin initialization timeout.
+        using CancellationTokenSource composeCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        composeCts.CancelAfter(TimeSpan.FromSeconds(ComposeTimeoutSeconds));
+        CancellationToken composeToken = composeCts.Token;
+
         try
         {
-            byte[] titleArt = await ApiResponseHttpClient.GetByteArrayAsync(sloganUrl, token);
+            byte[] titleArt = await ApiResponseHttpClient.GetByteArrayAsync(sloganUrl, composeToken);
 
             if (!WuwaOverlayImage.TryCompose(titleArt, WuwaLogoData.GetLockupPng(),
                                              WuwaOverlayImage.OverlayLayout.Default,
@@ -162,6 +174,12 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         {
             throw;
         }
+        catch (OperationCanceledException)
+        {
+            SharedStatic.InstanceLogger.LogWarning(
+                "[WuwaGlobalLauncherApiMedia::TryComposeLogoOverlay] Composing the logo overlay took longer than {Timeout}s, keeping the original artwork.",
+                ComposeTimeoutSeconds);
+        }
         catch (Exception ex)
         {
             SharedStatic.InstanceLogger.LogWarning(
@@ -172,6 +190,8 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
 
     protected override async Task<int> InitAsync(CancellationToken token)
     {
+        long startTick = Environment.TickCount64;
+
         string decodedAuthHash = authenticationHash.ResolveApiParameter(areParametersEncrypted);
         string decodedGameTag  = gameTag.ResolveApiParameter(areParametersEncrypted);
 
@@ -234,6 +254,12 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
                       ?? throw new NullReferenceException("Wallpaper API returned a null response!");
 
         await TryComposeLogoOverlayAsync(token);
+
+        // Always logged (not DEBUG gated) so that a slow initialization can be diagnosed from the
+        // launcher log, where it shows up as a plugin initialization timeout.
+        SharedStatic.InstanceLogger.LogInformation(
+            "[WuwaGlobalLauncherApiMedia::InitAsync] Background ready in {Elapsed} ms (composed overlay: {HasComposedOverlay}).",
+            Environment.TickCount64 - startTick, ComposedLogoOverlay != null);
 
         return 0;
     }

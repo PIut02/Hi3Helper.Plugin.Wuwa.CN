@@ -49,15 +49,20 @@ internal static class WuwaOverlayImage
         /// no horizontal cropping happens there, so the left ratio carries over directly, while the
         /// vertical ratio is compensated for the 2.8% the taller canvases lose at the top and bottom.
         /// <br/><br/>
-        /// The lockup is drawn slightly larger than the reference (8% of the canvas instead of about
-        /// 6.8%, i.e. 10% of the game area's height once mapped onto a 16:9 window) because the game's
-        /// API ships no campaign text block to fill the column underneath it, so the logo has to carry
-        /// the composition on its own. It grows downwards from the reference's top edge, keeping the
-        /// 10% / 7.2% column intact.
-        /// The title art is moved far enough left that the social media panel (~4% of the window
-        /// width) no longer covers it.
+        /// Two deliberate deviations from that reference:
+        /// <list type="bullet">
+        /// <item>The lockup is drawn larger (8.3% of the game area's height, i.e. 9.5% of this canvas)
+        /// because the game's API ships no campaign text block to fill the column underneath it, so the
+        /// logo has to carry the composition on its own.</item>
+        /// <item>It is centred in the vertical band between the top of the window and the top of the
+        /// launcher's news panel, instead of hugging the top edge: the news panel starts at about 43.6%
+        /// of the window height, which puts the centre of that band at about 21.8% — and therefore the
+        /// top edge of the logo at about 16.8%.</item>
+        /// </list>
+        /// The title art is moved far enough left that the social media panel (~4% of the window width)
+        /// no longer covers it.
         /// </summary>
-        internal static OverlayLayout Default => new(0.07f, 0.10f, 0.095f, 0.095f);
+        internal static OverlayLayout Default => new(0.07f, 0.10f, 0.186f, 0.095f);
     }
 
     /// <summary>

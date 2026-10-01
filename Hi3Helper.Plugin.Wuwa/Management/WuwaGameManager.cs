@@ -78,7 +78,7 @@ internal partial class WuwaGameManager : GameManagerBase
     {
         get => field ??=
             WuwaUtils.CreateApiHttpClient(ApiResponseAssetUrl, GameTag, AuthenticationHash, "", Hash1,
-                AreApiParametersEncrypted);
+                AreApiParametersEncrypted, WuwaUtils.ApiTimeoutSeconds);
         set;
     }
 

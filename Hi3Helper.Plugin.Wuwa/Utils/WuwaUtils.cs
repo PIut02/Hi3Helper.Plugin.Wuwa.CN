@@ -17,13 +17,31 @@ namespace Hi3Helper.Plugin.Wuwa.Utils;
 
 internal static class WuwaUtils
 {
-    internal static HttpClient CreateApiHttpClient(string? apiBaseUrl = null, string? gameTag = null, string? authCdnToken = "", string? apiOptions = "", string? hash1 = "", bool areParametersEncrypted = true)
-        => CreateApiHttpClientBuilder(apiBaseUrl, gameTag, authCdnToken, apiOptions, hash1, areParametersEncrypted).Create();
+    /// <summary>
+    /// Timeout used for the plugin's API calls, in seconds.
+    /// <br/><br/>
+    /// The Core defaults to 90 seconds (<c>PluginHttpClientBuilder.ExHttpTimeoutDefault</c>), which is
+    /// sensible for streaming assets but far too long for the small JSON/picture requests a preset
+    /// performs while the launcher initializes it: the launcher gives every plugin API interface only
+    /// about 10 seconds (<c>LauncherApiBase.ExecutionTimeout</c>, retried a few times) and reports the
+    /// failure as a connection timeout. Keeping the API calls well inside that budget makes a slow or
+    /// unreachable endpoint fail fast and fall back instead of looking like a broken network.
+    /// </summary>
+    internal const double ApiTimeoutSeconds = 8;
 
-    private static PluginHttpClientBuilder CreateApiHttpClientBuilder(string? apiBaseUrl, string? gameTag = null, string? authCdnToken= "", string? accessOption = null, string? hash1 = "", bool areParametersEncrypted = true)
+    internal static HttpClient CreateApiHttpClient(string? apiBaseUrl = null, string? gameTag = null, string? authCdnToken = "", string? apiOptions = "", string? hash1 = "", bool areParametersEncrypted = true, double? timeoutSeconds = null)
+        => CreateApiHttpClientBuilder(apiBaseUrl, gameTag, authCdnToken, apiOptions, hash1, areParametersEncrypted, timeoutSeconds).Create();
+
+    private static PluginHttpClientBuilder CreateApiHttpClientBuilder(string? apiBaseUrl, string? gameTag = null, string? authCdnToken= "", string? accessOption = null, string? hash1 = "", bool areParametersEncrypted = true, double? timeoutSeconds = null)
     {
         PluginHttpClientBuilder builder = new PluginHttpClientBuilder()
             .SetUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36");
+
+        if (timeoutSeconds.HasValue)
+        {
+            // Stays at the Core's default when not specified, so asset downloads keep their long timeout.
+            builder = builder.SetTimeout(timeoutSeconds.Value);
+        }
 
         // ReSharper disable once ConvertIfStatementToSwitchStatement      
         if (authCdnToken == null)

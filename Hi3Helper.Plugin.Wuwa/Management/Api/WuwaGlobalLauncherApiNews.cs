@@ -33,7 +33,8 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
             authenticationHash,
             apiOptions,
             hash1,
-            areParametersEncrypted);
+            areParametersEncrypted,
+            WuwaUtils.ApiTimeoutSeconds);
         set;
     }
 
@@ -55,6 +56,8 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
 
     protected override async Task<int> InitAsync(CancellationToken token)
     {
+        long startTick = Environment.TickCount64;
+
         string requestSocialUrl = ApiResponseBaseUrl
                .CombineUrlFromString("launcher",
                         gameTag.ResolveApiParameter(areParametersEncrypted),
@@ -73,6 +76,12 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
         await Task.WhenAll(
             FetchSocialAsync(requestSocialUrl, token),
             FetchNewsAsync(requestNewsUrl, token));
+
+        // Always logged (not DEBUG gated) so that a slow initialization can be diagnosed from the
+        // launcher log, where it shows up as a plugin initialization timeout.
+        SharedStatic.InstanceLogger.LogInformation(
+            "[WuwaGlobalLauncherApiNews::InitAsync] News ready in {Elapsed} ms (social: {HasSocial}, news: {HasNews}).",
+            Environment.TickCount64 - startTick, ApiResponseSocialMedia != null, ApiResponseNewsAndCarousel != null);
 
         return 0;
     }

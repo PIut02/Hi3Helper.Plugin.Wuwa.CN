@@ -406,25 +406,6 @@ public partial class Exports
 		return true;
 	}
 
-	private static bool TryGetGamePath(GameManagerExtension.RunGameFromGameManagerContext context, [NotNullWhen(true)] out string? gamePath)
-	{
-		gamePath = null;
-		if (context is not { GameManager: WuwaGameManager dnaGameManager })
-		{
-			return false;
-		}
-
-		dnaGameManager.GetGamePath(out string? currentGamePath);
-		if (string.IsNullOrEmpty(currentGamePath))
-		{
-			return false;
-		}
-
-		currentGamePath.NormalizePathInplace();
-		gamePath = currentGamePath;
-		return true;
-	}
-
 	private static bool TryGetStartingProcessFromContext(GameManagerExtension.RunGameFromGameManagerContext context, string? startArgument, [NotNullWhen(true)] out Process? process)
 	{
 		process = null;
@@ -438,16 +419,9 @@ public partial class Exports
 		SharedStatic.InstanceLogger.LogInformation(
 			"[Wuwa::TryGetStartingProcessFromContext] Starting executable path: {Path}", startingExecutablePath);
 
-		// Starting from Wuthering Waves 3.7, the client refuses to boot (fatal error:
-		// "kuro: Use launcher to start game!") unless the launcher tells it which tiered resource
-		// package (SD/HD/UHD) is installed. Resolve it from the game directory and append the
-		// switch, unless the user already supplied one.
-		TryGetGamePath(context, out string? resolvedGamePath);
-		string finalStartArgument = WuwaResourceTier.BuildStartArguments(resolvedGamePath, startArgument);
+		startArgument = WuwaLaunchArguments.AddResourceTier(Path.GetDirectoryName(startingExecutablePath)!, startArgument);
 
-		ProcessStartInfo startInfo = string.IsNullOrEmpty(finalStartArgument) ?
-			new ProcessStartInfo(startingExecutablePath) :
-			new ProcessStartInfo(startingExecutablePath, finalStartArgument);
+		ProcessStartInfo startInfo = new(startingExecutablePath, startArgument);
 
 		process = new Process
 		{

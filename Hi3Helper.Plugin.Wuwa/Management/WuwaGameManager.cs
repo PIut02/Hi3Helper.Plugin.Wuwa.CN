@@ -497,7 +497,7 @@ internal partial class WuwaGameManager : GameManagerBase
         return 0;
     }
 
-    private async Task DiscoverHotfixAsync(CancellationToken token)
+    internal async Task DiscoverHotfixAsync(CancellationToken token)
     {
         AvailableHotfixPatch = null;
 

@@ -842,13 +842,18 @@ internal partial class WuwaGameManager : GameManagerBase
                     WuwaApiResponseContext.Default.WuwaLauncherDownloadConfig);
             }
 
-            if (kuroConfig?.Version == null ||
-                !GameVersion.TryParse(kuroConfig.Version, null, out GameVersion kuroVersion) ||
-                kuroVersion == GameVersion.Empty)
+            // The top level 'version' field of this file can lag a whole release behind the resource
+            // bundles Kuro updates on every content update (measured: top level 3.6.0 while
+            // bundles.HD.version and the live API both say 3.7.0), so resolve the effective version
+            // with the bundle aware helper instead of trusting 'version' alone.
+            GameVersion liveApiVersion = IsInitialized ? ApiGameVersion : GameVersion.Empty;
+            if (!WuwaKuroVersionCrossCheck.TryResolve(kuroConfig, liveApiVersion,
+                    out GameVersion kuroVersion, out string kuroVersionSource))
             {
-                SharedStatic.InstanceLogger.LogTrace(
-                    "[WuwaGameManager::TryCrossCheckKuroLauncherVersion] Could not parse version from {File}.",
-                    kuroConfigFileName);
+                SharedStatic.InstanceLogger.LogWarning(
+                    "[WuwaGameManager::TryCrossCheckKuroLauncherVersion] Could not resolve a usable version " +
+                    "from {File} (top level '{TopLevel}', API={ApiVer}).",
+                    kuroConfigFileName, kuroConfig?.Version ?? "(null)", liveApiVersion);
                 return;
             }
 
@@ -868,10 +873,14 @@ internal partial class WuwaGameManager : GameManagerBase
 
             if (syncVersion != GameVersion.Empty)
             {
-                SharedStatic.InstanceLogger.LogInformation(
+                // Warning level on purpose: the host filters plugin side Information logs out of its
+                // log file, and a stale local version is one of the few things which must stay
+                // diagnosable from there.
+                SharedStatic.InstanceLogger.LogWarning(
                     "[WuwaGameManager::TryCrossCheckKuroLauncherVersion] Kuro launcher reports version {KuroVer} " +
-                    "(API={ApiVer}, local={CurVer}). Game was likely updated externally. Updating local version to {SyncVer}.",
-                    kuroVersion, ApiGameVersion, currentVersion, syncVersion);
+                    "(source={KuroSrc}, API={ApiVer}, local={CurVer}). Game was likely updated externally. " +
+                    "Updating local version to {SyncVer}.",
+                    kuroVersion, kuroVersionSource, ApiGameVersion, currentVersion, syncVersion);
 
                 CurrentGameVersion = syncVersion;
                 SaveConfig();
@@ -880,8 +889,8 @@ internal partial class WuwaGameManager : GameManagerBase
             {
                 SharedStatic.InstanceLogger.LogDebug(
                     "[WuwaGameManager::TryCrossCheckKuroLauncherVersion] Versions match or app-game-config is newer. " +
-                    "Kuro={KuroVer}, API={ApiVer}, Local={CurVer}. No action needed.",
-                    kuroVersion, ApiGameVersion, currentVersion);
+                    "Kuro={KuroVer} (source={KuroSrc}), API={ApiVer}, Local={CurVer}. No action needed.",
+                    kuroVersion, kuroVersionSource, ApiGameVersion, currentVersion);
             }
         }
         catch (Exception ex)
@@ -1064,6 +1073,9 @@ internal partial class WuwaGameManager : GameManagerBase
                     cfg.ReUseVersion  = existing.ReUseVersion ?? string.Empty;
                     cfg.State         = existing.State         ?? string.Empty;
                     cfg.IsPreDownload = false; // always clear the pre-download flag after a full update
+                    // Kuro keeps its per pack state (and the bundle versions) in this file; dropping
+                    // them on our write would erase the only reliable version source it holds.
+                    cfg.Bundles       = existing.Bundles;
                 }
             }
             catch (Exception ex)

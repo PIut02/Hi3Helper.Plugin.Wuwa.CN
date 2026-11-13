@@ -33,6 +33,26 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
 
     protected override string ApiLocaleFileName => "zh-Hans.json";
 
+    // ---------------------------------------------------------------- region API layout
+    // The mainland CDN does NOT serve the new "official" global game-config endpoint. Verified
+    // 2026-11-14 (all endpoints returned 200 unless noted):
+    //   global  launcher/game/{auth}/{tag}/official/index.json -> 404 on the CN host
+    //   CN      launcher/game/{tag}/{auth}/index.json           -> 200, legacy shape
+    //           root -> default -> config -> version (3.7.1); no root bundles/resourcePacks,
+    //           no root config.functionCode.
+    // Do NOT let this region inherit the global URL from WuwaGlobalPresetConfig.
+    protected override string GlobalGameConfigUrl =>
+        $"{ApiResponseUrl}launcher/game/{CurrentTag}/{AuthenticationHash}/index.json";
+
+    // Media still uses the legacy launcher-config endpoint on the CN CDN: it returns
+    // root -> functionCode -> background (no "config" wrapper), and the wallpaper payload
+    // lives under launcher/{auth}/{tag}/background/{hash}/zh-Hans.json.
+    protected override string MediaConfigUrl =>
+        $"{ApiResponseUrl}launcher/launcher/{AuthenticationHash}/{CurrentTag}/index.json";
+
+    protected override string MediaWallpaperBaseUrl =>
+        $"{ApiResponseUrl}launcher/{AuthenticationHash}/{CurrentTag}";
+
     // ---------------------------------------------------------------- installation detection
     protected override string ThirdPartySdkFolderName => "KrPcSdk_Mainland";
     protected override string SdkMarkerFileName => "KRSDKConfig.json";
@@ -79,7 +99,7 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
     {
         get => field ??= new WuwaGameManager(ExecutableName, ApiResponseUrl, ApiResponseAssetUrl, AuthenticationHash,
             CurrentTag, Hash1, AreApiParametersEncrypted, ThirdPartySdkFolderName, SdkMarkerFileName,
-            LauncherGameDirectoryName, SupportsPatchAndPreload);
+            LauncherGameDirectoryName, SupportsPatchAndPreload) { GameConfigUrl = GlobalGameConfigUrl };
         set;
     }
 

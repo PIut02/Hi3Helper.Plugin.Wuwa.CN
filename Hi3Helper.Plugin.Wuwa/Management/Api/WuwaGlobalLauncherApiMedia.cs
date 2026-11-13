@@ -21,8 +21,12 @@ using Microsoft.Extensions.Logging;
 namespace Hi3Helper.Plugin.Wuwa.Management.Api;
 
 [GeneratedComClass]
-internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, string gameTag, string authenticationHash,
-    bool areParametersEncrypted = true, string localeFileName = "en.json") : LauncherApiMediaBase
+/// <param name="apiResponseBaseUrl">Region CDN base.</param>
+/// <param name="mediaConfigUrl">Endpoint returning the rotating background hash.</param>
+/// <param name="wallpaperBaseUrl">Base directory to which background/{hash}/{locale}.json is appended.</param>
+/// <param name="localeFileName">Localized payload name (en.json / zh-Hans.json).</param>
+internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, string mediaConfigUrl,
+    string wallpaperBaseUrl, string localeFileName = "en.json") : LauncherApiMediaBase
 {
     [field: AllowNull, MaybeNull]
     protected override HttpClient ApiResponseHttpClient
@@ -153,7 +157,10 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
 
         try
         {
-            byte[] titleArt = await ApiResponseHttpClient.GetByteArrayAsync(sloganUrl, composeToken).ConfigureAwait(false);
+            // The slogan is an asset download, not an API call: use the same download client as
+            // DownloadAssetAsyncInner so it inherits the host proxy/DNS and the API endpoint
+            // request budget stays untouched (only config + wallpaper calls are API calls).
+            byte[] titleArt = await ApiDownloadHttpClient.GetByteArrayAsync(sloganUrl, composeToken).ConfigureAwait(false);
 
             if (!WuwaOverlayImage.TryCompose(titleArt, WuwaLogoData.GetLockupPng(),
                                              WuwaOverlayImage.OverlayLayout.Default,
@@ -210,40 +217,40 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         long startTick = Environment.TickCount64;
         SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiMedia::InitAsync] ENTER");
 
-        string decodedAuthHash = authenticationHash.ResolveApiParameter(areParametersEncrypted);
-        string decodedGameTag  = gameTag.ResolveApiParameter(areParametersEncrypted);
-
-        // Step 1 — fetch the stable launcher-config endpoint to resolve the current (rotating) background hash.
-        // URL: {CDN}/launcher/launcher/{clientId}/{gameId}/index.json
-        string launcherConfigUrl = ApiResponseBaseUrl
-            .CombineUrlFromString("launcher", "launcher", decodedAuthHash, decodedGameTag, "index.json");
+        // Step 1 — resolve the current (rotating) background hash.
+        // Global regions use the official game-config endpoint (config.functionCode.background);
+        // the mainland region still uses the legacy launcher-config endpoint (root functionCode).
+        // Both are supplied by the preset config, so this class stays region agnostic.
 
 #if DEBUG
         SharedStatic.InstanceLogger.LogDebug(
-            "[WuwaGlobalLauncherApiMedia::InitAsync] Fetching launcher-config: {Url}", launcherConfigUrl);
+            "[WuwaGlobalLauncherApiMedia::InitAsync] Fetching config: {Url}", mediaConfigUrl);
 #endif
 
         using HttpResponseMessage configResponse = await ApiResponseHttpClient!
-            .GetAsync(launcherConfigUrl, token).ConfigureAwait(false);
+            .GetAsync(mediaConfigUrl, token).ConfigureAwait(false);
         if (!configResponse.IsSuccessStatusCode)
         {
             SharedStatic.InstanceLogger.LogError(
-                "[WuwaGlobalLauncherApiMedia::InitAsync] launcher-config request failed: {StatusCode}", (int)configResponse.StatusCode);
+                "[WuwaGlobalLauncherApiMedia::InitAsync] config request failed: {StatusCode}", (int)configResponse.StatusCode);
         }
         configResponse.EnsureSuccessStatusCode();
 
-        WarnIfSlow("launcher-config", startTick);
+        WarnIfSlow("config", startTick);
 
         string configJson = await configResponse.Content.ReadAsStringAsync(token).ConfigureAwait(false);
-        SharedStatic.InstanceLogger.LogTrace("[WuwaGlobalLauncherApiMedia::InitAsync] Launcher-config response: {Json}", configJson);
+        SharedStatic.InstanceLogger.LogTrace("[WuwaGlobalLauncherApiMedia::InitAsync] Config response: {Json}", configJson);
 
         WuwaApiResponseLauncherConfig? launcherConfig = JsonSerializer.Deserialize(
             configJson, WuwaApiResponseContext.Default.WuwaApiResponseLauncherConfig);
 
-        string? backgroundHash = launcherConfig?.FunctionCode?.Background;
+        // Global game-config nests it under "config"; the mainland launcher-config keeps it at
+        // the root. Accept both so one media implementation serves both CDN generations.
+        string? backgroundHash = launcherConfig?.Config?.FunctionCode?.Background
+                                 ?? launcherConfig?.FunctionCode?.Background;
         if (string.IsNullOrEmpty(backgroundHash))
             throw new InvalidOperationException(
-                "launcher-config response did not contain a valid functionCode.background hash.");
+                "config response did not contain a valid functionCode.background hash.");
 
 #if DEBUG
         SharedStatic.InstanceLogger.LogDebug(
@@ -251,9 +258,9 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
 #endif
 
         // Step 2 — fetch the wallpapers-slogan endpoint using the dynamic hash.
-        // URL: {CDN}/launcher/{clientId}/{gameId}/background/{hash}/{locale}.json
-        string wallpaperUrl = ApiResponseBaseUrl
-            .CombineUrlFromString("launcher", decodedAuthHash, decodedGameTag, "background", backgroundHash, localeFileName);
+        // URL: {wallpaperBaseUrl}/background/{hash}/{locale}.json
+        string wallpaperUrl = wallpaperBaseUrl
+            .CombineUrlFromString("background", backgroundHash, localeFileName);
 
 #if DEBUG
         SharedStatic.InstanceLogger.LogDebug(

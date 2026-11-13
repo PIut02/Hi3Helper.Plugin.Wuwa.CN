@@ -3,6 +3,7 @@ using Hi3Helper.Plugin.Core.Management.Api;
 using Hi3Helper.Plugin.Core.Management.PresetConfig;
 using Hi3Helper.Plugin.Wuwa.Management.Api;
 using Hi3Helper.Plugin.Wuwa.Utils;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
@@ -25,6 +26,29 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
     protected virtual string AuthenticationHash => "VlNTU1c8DAEsKzslESUCDRIQAiomLA4WKBEMIAABOQgyMSEgVAA";
     protected virtual string Hash1 => "VzMgJyIRJlMyEgYHViowOSUSDBUQGhpSMDknVSJbBhA";
     protected virtual string ExecutableName => "Wuthering Waves.exe";
+
+    /// <summary>
+    /// Game-config endpoint used by <see cref="WuwaGameManager"/> and, for the global regions,
+    /// by the media API. Upstream moved to the "official" game-config endpoint; the mainland
+    /// CDN still serves a different (legacy-shaped) endpoint and overrides this property.
+    /// </summary>
+    protected virtual string GlobalGameConfigUrl =>
+        "https://prod-alicdn-gamestarter.kurogame.com/launcher/game/50004_P7xcUZnEr1AXIGON25E6KjpOgTlVrg6e/G153/official/index.json";
+
+    /// <summary>
+    /// Endpoint used by the media API to resolve the rotating background hash.
+    /// Global regions read <c>config.functionCode.background</c> from the game-config payload;
+    /// the mainland region still uses the legacy launcher-config endpoint where
+    /// <c>functionCode</c> lives at the root (see <c>WuwaCnPresetConfig</c>).
+    /// </summary>
+    protected virtual string MediaConfigUrl => GlobalGameConfigUrl;
+
+    /// <summary>
+    /// Base directory for the wallpaper/slogan payload; <c>background/{hash}/{locale}.json</c>
+    /// is appended to it by <see cref="WuwaGlobalLauncherApiMedia"/>.
+    /// </summary>
+    protected virtual string MediaWallpaperBaseUrl =>
+        new Uri(new Uri(GlobalGameConfigUrl), ".").AbsoluteUri;
     private const string EngineExecutableName = "Client-Win64-Shipping.exe";
 	protected virtual string VendorName => "Kuro Games";
 
@@ -142,8 +166,8 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
 
     public override ILauncherApiMedia? LauncherApiMedia
     {
-        get => field ??= new WuwaGlobalLauncherApiMedia(ApiResponseUrl, CurrentTag, AuthenticationHash,
-            AreApiParametersEncrypted, ApiLocaleFileName);
+        get => field ??= new WuwaGlobalLauncherApiMedia(ApiResponseUrl, MediaConfigUrl,
+            MediaWallpaperBaseUrl, ApiLocaleFileName);
         set;
     }
 
@@ -158,7 +182,7 @@ public partial class WuwaGlobalPresetConfig : WuwaPresetConfig
     {
         get => field ??= new WuwaGameManager(ExecutableName, ApiResponseUrl, ApiResponseAssetUrl, AuthenticationHash,
             CurrentTag, Hash1, AreApiParametersEncrypted, ThirdPartySdkFolderName, SdkMarkerFileName,
-            LauncherGameDirectoryName, SupportsPatchAndPreload);
+            LauncherGameDirectoryName, SupportsPatchAndPreload) { GameConfigUrl = GlobalGameConfigUrl };
         set;
     }
 

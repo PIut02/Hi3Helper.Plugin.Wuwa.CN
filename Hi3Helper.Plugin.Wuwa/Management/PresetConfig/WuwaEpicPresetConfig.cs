@@ -25,7 +25,7 @@ public partial class WuwaEpicPresetConfig : WuwaGlobalPresetConfig
 	{
 		get => field ??= new WuwaGameManager(ExecutableName, ApiResponseUrl, ApiResponseAssetUrl, AuthenticationHash,
 			CurrentTag, Hash1, AreApiParametersEncrypted, ThirdPartySdkFolderName, SdkMarkerFileName,
-			LauncherGameDirectoryName, SupportsPatchAndPreload);
+			LauncherGameDirectoryName, SupportsPatchAndPreload) { GameConfigUrl = GlobalGameConfigUrl };
 		set;
 	}
 

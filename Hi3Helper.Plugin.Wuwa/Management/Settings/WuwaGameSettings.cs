@@ -1,5 +1,6 @@
 using Hi3Helper.Plugin.Core.Management.PresetConfig;
 using Hi3Helper.Plugin.Core.UI.Settings;
+using Hi3Helper.Plugin.Wuwa.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -13,6 +14,9 @@ internal sealed class WuwaGameSettings
 {
     private const string GameUserSettingsSection = "/Script/Engine.GameUserSettings";
     private const string LocalKeyPrefix = "local.";
+
+    /// <summary>Localized form of a display string; a no-op outside Chinese UIs.</summary>
+    private static string L(string english) => WuwaLocale.Text(english);
 
     // See docs/wuwa-settings-mappings.md for the versioned mapping sources and limitations.
     private static readonly LocalSettingSection[] LocalSettingSections =
@@ -144,7 +148,7 @@ internal sealed class WuwaGameSettings
         string? gamePath = null;
         gameManager?.GetGamePath(out gamePath);
         if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath))
-            throw new DirectoryNotFoundException("Wuthering Waves is not installed or its game path is unavailable.");
+            throw new DirectoryNotFoundException(WuwaLocale.Text("Wuthering Waves is not installed or its game path is unavailable."));
 
         string iniPath = Path.Combine(gamePath, "Client", "Saved", "Config", "WindowsNoEditor", "GameUserSettings.ini");
         string localStorageDirectory = Path.Combine(gamePath, "Client", "Saved", "LocalStorage");
@@ -171,24 +175,24 @@ internal sealed class WuwaGameSettings
     {
         List<GameSettingsSection> sections =
         [
-            new("⚠ Ban-risk warning", [])
+            new(L("⚠ Ban-risk warning"), [])
             {
-                Description = "Editing Wuthering Waves files is unofficial and may carry a risk of account suspension or a ban. " +
+                Description = L("Editing Wuthering Waves files is unofficial and may carry a risk of account suspension or a ban. " +
                               "There are no known reports of bans from these settings at this time, but safety cannot be guaranteed. " +
-                              "Continue only if you accept that risk. This warning is shown every time you open this page."
+                              "Continue only if you accept that risk. This warning is shown every time you open this page.")
             },
-            new("Display", [
-                GameSettingEntry.Number("display.width", "Resolution width", ResolutionWidth, 640, 16384, 1),
-                GameSettingEntry.Number("display.height", "Resolution height", ResolutionHeight, 480, 16384, 1),
-                GameSettingEntry.Choice("display.mode", "Window mode", WindowMode.ToString(CultureInfo.InvariantCulture), [
-                    new("0", "Fullscreen"), new("1", "Borderless"), new("2", "Windowed")
+            new(L("Display"), [
+                GameSettingEntry.Number("display.width", L("Resolution width"), ResolutionWidth, 640, 16384, 1),
+                GameSettingEntry.Number("display.height", L("Resolution height"), ResolutionHeight, 480, 16384, 1),
+                GameSettingEntry.Choice("display.mode", L("Window mode"), WindowMode.ToString(CultureInfo.InvariantCulture), [
+                    new("0", L("Fullscreen")), new("1", L("Borderless")), new("2", L("Windowed"))
                 ]),
-                GameSettingEntry.Toggle("display.vsync", "VSync", VSync),
-                GameSettingEntry.Toggle("display.dynamicResolution", "Dynamic resolution", DynamicResolution),
-                GameSettingEntry.Toggle("display.hdr", "HDR output", Hdr),
-                GameSettingEntry.Number("display.hdrNits", "HDR peak brightness", HdrNits, 400, 10000, 50),
-                GameSettingEntry.Number("display.frameRate", "Frame-rate limit", FrameRate, 30, 360, 1,
-                    "Values not offered by the game may be unstable and can increase the account risk described above.")
+                GameSettingEntry.Toggle("display.vsync", L("VSync"), VSync),
+                GameSettingEntry.Toggle("display.dynamicResolution", L("Dynamic resolution"), DynamicResolution),
+                GameSettingEntry.Toggle("display.hdr", L("HDR output"), Hdr),
+                GameSettingEntry.Number("display.hdrNits", L("HDR peak brightness"), HdrNits, 400, 10000, 50),
+                GameSettingEntry.Number("display.frameRate", L("Frame-rate limit"), FrameRate, 30, 360, 1,
+                    L("Values not offered by the game may be unstable and can increase the account risk described above."))
             ])
         ];
 
@@ -202,10 +206,13 @@ internal sealed class WuwaGameSettings
             }
 
             if (entries.Count > 0)
-                sections.Add(new GameSettingsSection(localSection.Title, entries) { Description = localSection.Description });
+                sections.Add(new GameSettingsSection(L(localSection.Title), entries)
+                {
+                    Description = localSection.Description is null ? null : L(localSection.Description)
+                });
         }
 
-        return new GameSettingsPage(sections) { Title = "Wuthering Waves Game Settings" };
+        return new GameSettingsPage(sections) { Title = L("Wuthering Waves Game Settings") };
     }
 
     internal void SetValue(string key, string value)
@@ -223,12 +230,12 @@ internal sealed class WuwaGameSettings
         }
 
         if (!key.StartsWith(LocalKeyPrefix, StringComparison.Ordinal))
-            throw new ArgumentOutOfRangeException(nameof(key), key, "Unknown Wuthering Waves setting.");
+            throw new ArgumentOutOfRangeException(nameof(key), key, WuwaLocale.Text("Unknown Wuthering Waves setting."));
 
         string localKey = key[LocalKeyPrefix.Length..];
         LocalSetting setting = FindLocalSetting(localKey);
         if (!_localValues.ContainsKey(localKey))
-            throw new ArgumentOutOfRangeException(nameof(key), key, "This setting is not available in the installed game configuration.");
+            throw new ArgumentOutOfRangeException(nameof(key), key, WuwaLocale.Text("This setting is not available in the installed game configuration."));
 
         string storedValue = setting.Kind switch
         {
@@ -236,7 +243,7 @@ internal sealed class WuwaGameSettings
             LocalSettingKind.Number => ParseRangeDouble(value, setting.Minimum, setting.Maximum, key)
                 .ToString("0.########", CultureInfo.InvariantCulture),
             LocalSettingKind.Choice when setting.Choices?.Any(choice => choice.Value == value) == true => value,
-            LocalSettingKind.Choice => throw new ArgumentOutOfRangeException(nameof(value), value, $"Unsupported value for {localKey}."),
+            LocalSettingKind.Choice => throw new ArgumentOutOfRangeException(nameof(value), value, WuwaLocale.Text("Unsupported value for {0}.", localKey)),
             _ => throw new ArgumentOutOfRangeException(nameof(setting.Kind))
         };
 
@@ -247,7 +254,7 @@ internal sealed class WuwaGameSettings
     internal void Apply()
     {
         if (Process.GetProcessesByName("Client-Win64-Shipping").Length != 0)
-            throw new InvalidOperationException("Close Wuthering Waves before applying game settings.");
+            throw new InvalidOperationException(WuwaLocale.Text("Close Wuthering Waves before applying game settings."));
 
         Backup(_gameUserSettingsPath);
         WuwaIniDocument ini = WuwaIniDocument.Load(_gameUserSettingsPath);
@@ -282,21 +289,28 @@ internal sealed class WuwaGameSettings
     private static GameSettingEntry CreateLocalEntry(LocalSetting setting, string value)
     {
         string pageKey = LocalKeyPrefix + setting.Key;
+        string title = L(setting.Title);
+        string? description = setting.Description is null ? null : L(setting.Description);
         return setting.Kind switch
         {
-            LocalSettingKind.Toggle => GameSettingEntry.Toggle(pageKey, setting.Title, value == "1" || bool.TryParse(value, out bool enabled) && enabled, setting.Description),
-            LocalSettingKind.Number => GameSettingEntry.Slider(pageKey, setting.Title, ParseDouble(value, setting.Minimum), setting.Minimum, setting.Maximum, setting.Step, setting.Description),
-            LocalSettingKind.Choice => GameSettingEntry.Choice(pageKey, setting.Title, value, AddUnknownChoice(setting.Choices!, value), setting.Description),
+            LocalSettingKind.Toggle => GameSettingEntry.Toggle(pageKey, title, value == "1" || bool.TryParse(value, out bool enabled) && enabled, description),
+            LocalSettingKind.Number => GameSettingEntry.Slider(pageKey, title, ParseDouble(value, setting.Minimum), setting.Minimum, setting.Maximum, setting.Step, description),
+            LocalSettingKind.Choice => GameSettingEntry.Choice(pageKey, title, value, LocalizeChoices(setting.Key, setting.Choices!, value), description),
             _ => throw new ArgumentOutOfRangeException(nameof(setting.Kind))
         };
     }
 
-    private static IReadOnlyList<GameSettingChoice> AddUnknownChoice(IReadOnlyList<GameSettingChoice> choices, string value) =>
-        choices.Any(choice => choice.Value == value) ? choices : [.. choices, new(value, $"Unverified value ({value})")];
+    private static IReadOnlyList<GameSettingChoice> LocalizeChoices(string settingKey, IReadOnlyList<GameSettingChoice> choices, string value)
+    {
+        List<GameSettingChoice> localized = [.. choices.Select(choice => new GameSettingChoice(choice.Value, WuwaLocale.TextIn(settingKey, choice.Title)))];
+        if (choices.All(choice => choice.Value != value))
+            localized.Add(new(value, WuwaLocale.Text("Unverified value ({0})", value)));
+        return localized;
+    }
 
     private static LocalSetting FindLocalSetting(string key) =>
         LocalSettingSections.SelectMany(section => section.Settings).FirstOrDefault(setting => setting.Key == key)
-        ?? throw new ArgumentOutOfRangeException(nameof(key), key, "Unknown Wuthering Waves setting.");
+        ?? throw new ArgumentOutOfRangeException(nameof(key), key, WuwaLocale.Text("Unknown Wuthering Waves setting."));
 
     private static LocalSetting Toggle(string key, string title, string? description = null) =>
         new(key, title, LocalSettingKind.Toggle, 0, 1, 1, null, description);
@@ -333,14 +347,14 @@ internal sealed class WuwaGameSettings
     private static int ParseRangeInt(string value, int minimum, int maximum, string key)
     {
         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) || parsed < minimum || parsed > maximum)
-            throw new ArgumentOutOfRangeException(key, value, $"Value must be between {minimum} and {maximum}.");
+            throw new ArgumentOutOfRangeException(key, value, WuwaLocale.Text("Value must be between {0} and {1}.", minimum, maximum));
         return parsed;
     }
 
     private static double ParseRangeDouble(string value, double minimum, double maximum, string key)
     {
         if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) || parsed < minimum || parsed > maximum)
-            throw new ArgumentOutOfRangeException(key, value, $"Value must be between {minimum} and {maximum}.");
+            throw new ArgumentOutOfRangeException(key, value, WuwaLocale.Text("Value must be between {0} and {1}.", minimum, maximum));
         return parsed;
     }
 

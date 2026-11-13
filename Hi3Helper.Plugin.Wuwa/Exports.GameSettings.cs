@@ -1,6 +1,7 @@
 using Hi3Helper.Plugin.Core.Management.PresetConfig;
 using Hi3Helper.Plugin.Core.UI.Settings;
 using Hi3Helper.Plugin.Wuwa.Management.Settings;
+using Hi3Helper.Plugin.Wuwa.Utils;
 using System;
 using System.Collections.Generic;
 
@@ -45,5 +46,6 @@ public partial class Exports
     private static WuwaGameSettings GetPending(string profileName) =>
         PendingGameSettings.TryGetValue(profileName, out WuwaGameSettings? settings)
             ? settings
-            : throw new InvalidOperationException("Open the Wuthering Waves game settings page before changing settings.");
+            : throw new InvalidOperationException(
+                WuwaLocale.Text("Open the Wuthering Waves game settings page before changing settings."));
 }

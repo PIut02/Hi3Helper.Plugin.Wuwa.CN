@@ -37,3 +37,21 @@ Graphics presets merge device-dependent lists. Availability still depends on har
 Unresolved internal enums: KeyboardLockEnemyMode, GamepadLockEnemyMode, SkillLockEnemyMode, FlyControlMode and EyeProtectionMode. These offer only their existing value until their storage mapping is established. Do not infer their values from similarly named menu controls.
 
 The generic Level lists are removed. Ray tracing becomes a quality selector, and regular/combat camera distance becomes a 0–100 slider. No installed game files are modified by this source change.
+
+## Localization
+
+Display strings (section/entry titles, descriptions, choice labels, the ban-risk warning and the
+user-facing error messages) are localized through `Utils/WuwaLocale.Text*` and the Simplified
+Chinese table in `Utils/WuwaLocale.Settings.cs`. The English source text doubles as the resource
+key, so strings added upstream stay readable in English instead of showing an untranslated key;
+labels that need a different translation per setting use a `SettingKey|English` key (for example
+`ImageQuality|Quality` = 画质优先 vs. `NvidiaSuperSamplingQuality`'s 质量).
+
+Chinese terms follow the game's own Simplified Chinese UI text (Arikatsu/WutheringWaves_Data **3.6**
+Textmaps: `zh-Hans/multi_text/MultiText.json` for the `MenuConfig_*_Name` / `*_OptionsName_*` keys
+pointed at by the FunctionId table above, e.g. 图形质量预设, 超级分辨率, 各向异性采样, 最高帧率,
+护眼模式); settings the game does not expose (ban-risk warning, unverified internal settings,
+plugin errors) are translated in the same tone.
+
+`tests/GameSettingsLocale` fails the build when a page string has no Chinese entry, when a table
+entry becomes unreachable (dead key), or when the locale switch stops re-rendering the page.

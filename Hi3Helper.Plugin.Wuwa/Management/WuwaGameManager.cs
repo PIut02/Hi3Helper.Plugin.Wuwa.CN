@@ -854,13 +854,7 @@ internal partial class WuwaGameManager : GameManagerBase
 
         try
         {
-            // Upstream skips this legacy cross-check whenever launcherDownloadConfig.json contains
-            // "bundles", because its resource-pack flow owns that file. In this fork the mainland
-            // CDN has no root resourcePacks (so UsesResourcePacks is false), yet its
-            // launcherDownloadConfig.json still carries bundles.HD.version - the only reliable
-            // version source after an external launcher update. Skipping on "bundles" alone would
-            // reintroduce the stale 3.6.0 report, so only defer when the pack flow really owns it.
-            if (UsesResourcePacks)
+            if (UsesResourcePacks || JsonNode.Parse(File.ReadAllText(kuroConfigPath))?["bundles"] != null)
                 return;
             WuwaLauncherDownloadConfig? kuroConfig;
             using (FileStream fs = File.OpenRead(kuroConfigPath))
@@ -869,18 +863,13 @@ internal partial class WuwaGameManager : GameManagerBase
                     WuwaApiResponseContext.Default.WuwaLauncherDownloadConfig);
             }
 
-            // The top level 'version' field of this file can lag a whole release behind the resource
-            // bundles Kuro updates on every content update (measured: top level 3.6.0 while
-            // bundles.HD.version and the live API both say 3.7.0), so resolve the effective version
-            // with the bundle aware helper instead of trusting 'version' alone.
-            GameVersion liveApiVersion = IsInitialized ? ApiGameVersion : GameVersion.Empty;
-            if (!WuwaKuroVersionCrossCheck.TryResolve(kuroConfig, liveApiVersion,
-                    out GameVersion kuroVersion, out string kuroVersionSource))
+            if (kuroConfig?.Version == null ||
+                !GameVersion.TryParse(kuroConfig.Version, null, out GameVersion kuroVersion) ||
+                kuroVersion == GameVersion.Empty)
             {
-                SharedStatic.InstanceLogger.LogWarning(
-                    "[WuwaGameManager::TryCrossCheckKuroLauncherVersion] Could not resolve a usable version " +
-                    "from {File} (top level '{TopLevel}', API={ApiVer}).",
-                    kuroConfigFileName, kuroConfig?.Version ?? "(null)", liveApiVersion);
+                SharedStatic.InstanceLogger.LogTrace(
+                    "[WuwaGameManager::TryCrossCheckKuroLauncherVersion] Could not parse version from {File}.",
+                    kuroConfigFileName);
                 return;
             }
 
@@ -900,14 +889,10 @@ internal partial class WuwaGameManager : GameManagerBase
 
             if (syncVersion != GameVersion.Empty)
             {
-                // Warning level on purpose: the host filters plugin side Information logs out of its
-                // log file, and a stale local version is one of the few things which must stay
-                // diagnosable from there.
-                SharedStatic.InstanceLogger.LogWarning(
+                SharedStatic.InstanceLogger.LogInformation(
                     "[WuwaGameManager::TryCrossCheckKuroLauncherVersion] Kuro launcher reports version {KuroVer} " +
-                    "(source={KuroSrc}, API={ApiVer}, local={CurVer}). Game was likely updated externally. " +
-                    "Updating local version to {SyncVer}.",
-                    kuroVersion, kuroVersionSource, ApiGameVersion, currentVersion, syncVersion);
+                    "(API={ApiVer}, local={CurVer}). Game was likely updated externally. Updating local version to {SyncVer}.",
+                    kuroVersion, ApiGameVersion, currentVersion, syncVersion);
 
                 CurrentGameVersion = syncVersion;
                 SaveConfig();
@@ -916,8 +901,8 @@ internal partial class WuwaGameManager : GameManagerBase
             {
                 SharedStatic.InstanceLogger.LogDebug(
                     "[WuwaGameManager::TryCrossCheckKuroLauncherVersion] Versions match or app-game-config is newer. " +
-                    "Kuro={KuroVer} (source={KuroSrc}), API={ApiVer}, Local={CurVer}. No action needed.",
-                    kuroVersion, kuroVersionSource, ApiGameVersion, currentVersion);
+                    "Kuro={KuroVer}, API={ApiVer}, Local={CurVer}. No action needed.",
+                    kuroVersion, ApiGameVersion, currentVersion);
             }
         }
         catch (Exception ex)

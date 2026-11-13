@@ -1,10 +1,14 @@
-// Fork-specific compatibility checks for the mainland China (国服) CDN.
+// Fork-specific regression checks for the mainland China (国服) preset.
 //
-// The mainland CDN still serves the legacy API generation while upstream's global regions moved
-// to the "official" game-config endpoint. These checks pin down both shapes so a future upstream
-// merge cannot silently make the mainland region talk to the global endpoints.
+// After the 2026-11-14 upgrade both regions use the SAME official API shape:
+//   /launcher/game/{appId}_{appKey}/{gameId}/official/index.json
+//   /launcher/app /{appId}_{appKey}/{gameId}/official/{social|information}/{locale}.json
+//   /launcher/game/{appId}_{appKey}/{gameId}/official/background/{hash}/{locale}.json
+// Only the constants differ (host, appKey, gameId, locale). This file pins those constants
+// down and makes sure no region-specific URL construction sneaks back in.
 //
-// Endpoint values below were measured against the live CDN on 2026-11-14.
+// Values were read from the official launcher's kr_get_launcher_conf callback (KRLauncher log,
+// XOR 0x09) and verified against the live CDN on 2026-11-14.
 using System.Net;
 using System.Reflection;
 using System.Text.Json;
@@ -17,8 +21,10 @@ const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic |
                            BindingFlags.Instance | BindingFlags.Static;
 
 const string cnBase = "https://prod-cn-alicdn-gamestarter.kurogame.com/";
-const string cnAuth = "10003_Y8xXrXk65DqFHEDgApn3cpK5lfczpFx5";
-const string cnTag = "G152";
+const string cnAuth = "10003_oLNgHF1CESo51DGHN2odtp40e3oI1HfZ";
+const string cnGameId = "G152";
+const string serverCode = "official";
+const string cnLocale = "zh-Hans.json";
 
 int passed = 0;
 
@@ -53,9 +59,9 @@ void Set(object instance, string name, object? value)
     throw new Exception("Missing member: " + name);
 }
 
-Task InitMedia(LauncherApiMediaBase media) => (Task)media.GetType()
-    .GetMethod("InitAsync", flags | BindingFlags.DeclaredOnly)!
-    .Invoke(media, [CancellationToken.None])!;
+Task InitApi(object api, string method) => (Task)api.GetType()
+    .GetMethod(method, flags | BindingFlags.DeclaredOnly)!
+    .Invoke(api, [CancellationToken.None])!;
 
 async Task Test(string name, Func<Task> action)
 {
@@ -64,79 +70,86 @@ async Task Test(string name, Func<Task> action)
     Console.WriteLine("PASS " + name);
 }
 
+string cnGameConfigUrl = $"{cnBase}launcher/game/{cnAuth}/{cnGameId}/{serverCode}/index.json";
+string cnSocialUrl = $"{cnBase}launcher/app/{cnAuth}/{cnGameId}/{serverCode}/social/{cnLocale}";
+string cnNewsUrl = $"{cnBase}launcher/app/{cnAuth}/{cnGameId}/{serverCode}/information/{cnLocale}";
+string cnWallpaperUrl = $"{cnBase}launcher/game/{cnAuth}/{cnGameId}/{serverCode}/background/cn-hash/{cnLocale}";
+
 try
 {
-    await Test("CN and global regions use different game-config endpoints", () =>
+    await Test("CN and global share one game-config shape, only constants differ", () =>
     {
         var cn = new WuwaCnPresetConfig();
         var global = new WuwaGlobalPresetConfig();
-
         string? cnUrl = (string?)Get(cn.GameManager!, "GameConfigUrl");
         string? globalUrl = (string?)Get(global.GameManager!, "GameConfigUrl");
 
-        Assert(cnUrl == $"{cnBase}launcher/game/{cnTag}/{cnAuth}/index.json",
-            "CN manager must use the CN game-config URL, got: " + cnUrl);
-        Assert(globalUrl!.StartsWith("https://prod-alicdn-gamestarter.kurogame.com/", StringComparison.Ordinal) &&
-               globalUrl.EndsWith("/official/index.json", StringComparison.Ordinal),
-            "Global manager must use the official global endpoint, got: " + globalUrl);
-        Assert(cnUrl != globalUrl, "CN and global must not share a game-config endpoint");
-
-        // The CN CDN must never be handed the global-only "official" path.
-        Assert(!cnUrl!.Contains("official", StringComparison.Ordinal),
-            "CN game-config must not contain the global 'official' segment");
+        Assert(cnUrl == cnGameConfigUrl, "CN game-config URL drifted: " + cnUrl);
+        Assert(globalUrl!.StartsWith("https://prod-alicdn-gamestarter.kurogame.com/", StringComparison.Ordinal),
+            "Global game-config host drifted: " + globalUrl);
+        Assert(cnUrl != globalUrl, "CN and global must not share one endpoint");
+        Assert(cnUrl!.EndsWith($"/{cnGameId}/{serverCode}/index.json", StringComparison.Ordinal) &&
+               globalUrl.EndsWith($"/G153/{serverCode}/index.json", StringComparison.Ordinal),
+            "Both regions must use the same /launcher/game/{auth}/{gameId}/official/index.json shape");
+        Assert(!cnUrl.Contains("Y8xXrXk65", StringComparison.Ordinal),
+            "CN still uses the frozen legacy appKey");
         return Task.CompletedTask;
     });
 
-    await Test("launcher-config model accepts both legacy root and global nested shapes", () =>
+    await Test("launcher-config model uses the single config.functionCode shape", () =>
     {
+        var official = JsonSerializer.Deserialize(
+            """{"config":{"functionCode":{"background":"cn-hash"}}}""",
+            WuwaApiResponseContext.Default.WuwaApiResponseLauncherConfig);
+        Assert(official?.Config?.FunctionCode?.Background == "cn-hash",
+            "config.functionCode.background failed to deserialize");
+
+        // The legacy root-level functionCode is deliberately no longer mapped: it belonged to
+        // the retired launcher-config channel and must not be revived.
         var legacy = JsonSerializer.Deserialize(
-            """{"functionCode":{"background":"cn-hash"}}""",
+            """{"functionCode":{"background":"stale-hash"}}""",
             WuwaApiResponseContext.Default.WuwaApiResponseLauncherConfig);
-        var modern = JsonSerializer.Deserialize(
-            """{"config":{"functionCode":{"background":"global-hash"}}}""",
-            WuwaApiResponseContext.Default.WuwaApiResponseLauncherConfig);
-
-        Assert(legacy?.Config == null && legacy?.FunctionCode?.Background == "cn-hash",
-            "Legacy CN launcher-config shape failed to deserialize");
-        Assert(modern?.FunctionCode == null && modern?.Config?.FunctionCode?.Background == "global-hash",
-            "New global game-config shape failed to deserialize");
+        Assert(legacy?.Config == null, "Legacy root functionCode unexpectedly mapped again");
         return Task.CompletedTask;
     });
 
-    await Test("CN game-config keeps the legacy default.config shape without resource packs", () =>
+    await Test("CN game-config is the official resource-pack shape", () =>
     {
-        // Trimmed representative of the live CN response (root keys: default, keyFileCheckList,
-        // fingerprints, ... ; default.version measured as 3.7.1 on 2026-11-14).
-        const string cnGameConfig = """
-            {"default":{"cdnList":[],"config":{"indexFile":"current.json","indexFileMd5":"abc",
-            "version":"3.7.1","patchType":"0","size":1,"baseUrl":"base"},"version":"3.7.1"},
-            "keyFileCheckList":["Wuthering Waves.exe"],"fingerprints":[]}
+        const string config = """
+            {"cdnList":[{"url":"https://pcdownload-aliyun.aki-game.com/"}],
+             "bundles":{"HD":{"resourcePacks":["common","hd"]}},
+             "resourcePacks":{"common":{"version":"3.8.0","indexFile":"common.json"},
+                              "hd":{"version":"3.8.0","indexFile":"hd.json"}},
+             "config":{"functionCode":{"background":"cn-hash"}},
+             "resourcesGray":null,"predownload":null}
             """;
-        var cfg = JsonSerializer.Deserialize(cnGameConfig,
+        var cfg = JsonSerializer.Deserialize(config,
             WuwaApiResponseContext.Default.WuwaApiResponseGameConfig);
-
-        Assert(cfg?.Default?.ConfigReference != null,
-            "CN default.config must still map to Default.ConfigReference");
-        Assert(cfg?.Default?.ConfigReference?.CurrentVersion.ToString() == "3.7.1",
-            "CN game-config version was lost");
-        Assert(cfg?.ResourcePacks == null && cfg?.Bundles == null,
-            "CN game-config must not be mistaken for a resource-pack config");
+        Assert(cfg?.ResourcePacks is { Count: > 0 } && cfg.Bundles is { Count: > 0 },
+            "CN resource packs / bundles were lost");
+        Assert(cfg?.ResourcePacks?["hd"].CurrentVersion.ToString() == "3.8.0",
+            "CN game version was lost");
         return Task.CompletedTask;
     });
 
-    await Test("CN media uses legacy launcher-config and zh-Hans wallpaper URL", async () =>
+    await Test("CN media uses the official game-config URL and zh-Hans wallpaper", async () =>
     {
-        string configUrl = $"{cnBase}launcher/launcher/{cnAuth}/{cnTag}/index.json";
-        string wallpaperUrl = $"{cnBase}launcher/{cnAuth}/{cnTag}/background/cn-hash/zh-Hans.json";
         var requests = new List<string>();
-
         using var client = new HttpClient(new Handler(request =>
         {
             string url = request.RequestUri!.AbsoluteUri;
+            // The optional logo-overlay composition downloads the slogan artwork through the
+            // download client. Answer it locally (with bytes that are not a PNG, so composing
+            // gracefully falls back) and keep it out of the API request list.
+            if (url == "https://assets.test/slogan.png")
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent([1, 2, 3])
+                };
             requests.Add(url);
-            if (url == configUrl)
-                return Json("""{"functionCode":{"background":"cn-hash"}}""");
-            if (url == wallpaperUrl)
+            if (url == cnGameConfigUrl)
+                return Json("""{"config":{"functionCode":{"background":"cn-hash"}}}""");
+            if (url == cnWallpaperUrl)
                 return Json("""
                     {"functionSwitch":1,"backgroundFileType":1,
                      "backgroundFile":"https://assets.test/bg.webp",
@@ -148,22 +161,42 @@ try
 
         var media = (LauncherApiMediaBase)new WuwaCnPresetConfig().LauncherApiMedia!;
         Set(media, "ApiResponseHttpClient", client);
-        await InitMedia(media);
+        Set(media, "ApiDownloadHttpClient", client);
+        await InitApi(media, "InitAsync");
 
-        Assert(requests.Count == 2 && requests[0] == configUrl && requests[1] == wallpaperUrl,
-            "CN media must request the CN launcher-config and zh-Hans wallpaper: " +
+        Assert(requests.Count == 2 && requests[0] == cnGameConfigUrl && requests[1] == cnWallpaperUrl,
+            "CN media must request the official game-config and zh-Hans wallpaper: " +
             string.Join(", ", requests));
 
         using var backgrounds = PluginDisposableMemoryExtension
             .ToManagedSpan<LauncherPathEntry>(media.GetBackgroundEntries);
         using LauncherPathEntry background = backgrounds[0];
         Assert(background.Path == "https://assets.test/bg.webp", "CN background was lost");
-
-        using var logos = PluginDisposableMemoryExtension
-            .ToManagedSpan<LauncherPathEntry>(media.GetLogoOverlayEntries);
-        using LauncherPathEntry logo = logos[0];
-        Assert(logo.Path == "https://assets.test/slogan.png", "CN slogan was lost");
         media.Dispose();
+    });
+
+    await Test("CN news/social use the official /launcher/app/.../official/ layout", async () =>
+    {
+        var requests = new List<string>();
+        using var client = new HttpClient(new Handler(request =>
+        {
+            string url = request.RequestUri!.AbsoluteUri;
+            requests.Add(url);
+            if (url == cnSocialUrl)
+                return Json("""{"switch":1,"data":[{"name":"库街区","icon":"https://assets.test/icon.png"}]}""");
+            if (url == cnNewsUrl)
+                return Json("""{"guidance":{"desc":""},"slideshow":[]}""");
+            throw new Exception("Unexpected CN API request: " + url);
+        }));
+
+        var news = (LauncherApiNewsBase)new WuwaCnPresetConfig().LauncherApiNews!;
+        Set(news, "ApiResponseHttpClient", client);
+        await InitApi(news, "InitAsync");
+
+        Assert(requests.Count == 2 && requests.Contains(cnSocialUrl) && requests.Contains(cnNewsUrl),
+            "CN news/social must use /launcher/app/{auth}/G152/official/...: " +
+            string.Join(", ", requests));
+        news.Dispose();
     });
 
     Console.WriteLine($"{passed} CN API compatibility checks passed.");

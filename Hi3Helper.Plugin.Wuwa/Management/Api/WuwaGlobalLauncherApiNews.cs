@@ -59,19 +59,17 @@ internal partial class WuwaGlobalLauncherApiNews(string apiResponseBaseUrl, stri
         long startTick = Environment.TickCount64;
         SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiNews::InitAsync] ENTER");
 
-        string requestSocialUrl = ApiResponseBaseUrl
-               .CombineUrlFromString("launcher",
-                        gameTag.ResolveApiParameter(areParametersEncrypted),
-                        authenticationHash.ResolveApiParameter(areParametersEncrypted),
-                        "social",
-                        localeFileName);
-
-        string requestNewsUrl = ApiResponseBaseUrl
-               .CombineUrlFromString("launcher",
-                        authenticationHash.ResolveApiParameter(areParametersEncrypted),
-                        gameTag.ResolveApiParameter(areParametersEncrypted),
-                        "information",
-                        localeFileName);
+        // Official launcher layout (both regions, verified 2026-11-14):
+        // /launcher/app/{appId}_{appKey}/{gameId}/official/{social|information}/{locale}.json
+        // The older /launcher/{...}/{information|social}/... routes now return 404 on both CDNs.
+        // Built with interpolation rather than CombineUrlFromString: Core's helper does not
+        // reserve the '/' separator per segment in its length calculation, so a 7-segment URL
+        // writes past the rented buffer and corrupts the last character (seen as U+FFFD).
+        string decodedAuth = authenticationHash.ResolveApiParameter(areParametersEncrypted);
+        string decodedGameTag = gameTag.ResolveApiParameter(areParametersEncrypted);
+        string apiRoot = $"{ApiResponseBaseUrl.TrimEnd('/')}/launcher/app/{decodedAuth}/{decodedGameTag}/official";
+        string requestSocialUrl = $"{apiRoot}/social/{localeFileName}";
+        string requestNewsUrl = $"{apiRoot}/information/{localeFileName}";
 
         // Fetch social and news in parallel so one failing doesn't delay the other.
         long fetchTick = Environment.TickCount64;

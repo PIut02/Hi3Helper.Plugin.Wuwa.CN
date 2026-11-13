@@ -9,19 +9,8 @@ namespace Hi3Helper.Plugin.Wuwa.Management.Api;
 
 public class WuwaApiResponseLauncherConfig
 {
-    /// <summary>
-    /// New (global) game-config shape: <c>root -> config -> functionCode -> background</c>.
-    /// </summary>
     [JsonPropertyName("config")]
     public WuwaApiResponseLauncherConfigSection? Config { get; set; }
-
-    /// <summary>
-    /// Legacy launcher-config shape still served by the mainland China CDN:
-    /// <c>root -> functionCode -> background</c>. Kept as a fallback so the same media
-    /// implementation can serve both CDN generations.
-    /// </summary>
-    [JsonPropertyName("functionCode")] // Mapping: root -> functionCode
-    public WuwaApiResponseLauncherConfigFunctionCode? FunctionCode { get; set; }
 }
 
 public class WuwaApiResponseLauncherConfigSection

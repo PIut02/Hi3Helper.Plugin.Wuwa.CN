@@ -24,7 +24,10 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
     protected override string ApiResponseUrl => "https://prod-cn-alicdn-gamestarter.kurogame.com/";
     protected override string ApiResponseAssetUrl => "https://pcdownload-aliyun.aki-game.com/";
     protected override string CurrentTag => "G152";
-    protected override string AuthenticationHash => "10003_Y8xXrXk65DqFHEDgApn3cpK5lfczpFx5";
+    // Current appKey, read from the official launcher's kr_get_launcher_conf callback
+    // (KRLauncher log, XOR 0x09). The previous 10003_Y8x... belongs to a frozen legacy channel
+    // that is still online but stuck at game version 3.7.1; this one serves 3.8.0.
+    protected override string AuthenticationHash => "10003_oLNgHF1CESo51DGHN2odtp40e3oI1HfZ";
 
     /// <summary>
     /// The mainland CDN returns these values in plain text, so they must not be de-obfuscated.
@@ -34,24 +37,12 @@ public partial class WuwaCnPresetConfig : WuwaGlobalPresetConfig
     protected override string ApiLocaleFileName => "zh-Hans.json";
 
     // ---------------------------------------------------------------- region API layout
-    // The mainland CDN does NOT serve the new "official" global game-config endpoint. Verified
-    // 2026-11-14 (all endpoints returned 200 unless noted):
-    //   global  launcher/game/{auth}/{tag}/official/index.json -> 404 on the CN host
-    //   CN      launcher/game/{tag}/{auth}/index.json           -> 200, legacy shape
-    //           root -> default -> config -> version (3.7.1); no root bundles/resourcePacks,
-    //           no root config.functionCode.
-    // Do NOT let this region inherit the global URL from WuwaGlobalPresetConfig.
+    // The mainland CDN uses exactly the same API *shape* as the global one - only the constants
+    // differ (host, appId_appKey, gameId, locale). All URL building therefore stays in the base
+    // preset / manager / media & news classes; this region only overrides the values.
+    // Verified against the official launcher (3.0.1.0 and 3.1.0.1) on 2026-11-14.
     protected override string GlobalGameConfigUrl =>
-        $"{ApiResponseUrl}launcher/game/{CurrentTag}/{AuthenticationHash}/index.json";
-
-    // Media still uses the legacy launcher-config endpoint on the CN CDN: it returns
-    // root -> functionCode -> background (no "config" wrapper), and the wallpaper payload
-    // lives under launcher/{auth}/{tag}/background/{hash}/zh-Hans.json.
-    protected override string MediaConfigUrl =>
-        $"{ApiResponseUrl}launcher/launcher/{AuthenticationHash}/{CurrentTag}/index.json";
-
-    protected override string MediaWallpaperBaseUrl =>
-        $"{ApiResponseUrl}launcher/{AuthenticationHash}/{CurrentTag}";
+        $"{ApiResponseUrl}launcher/game/{AuthenticationHash}/{CurrentTag}/official/index.json";
 
     // ---------------------------------------------------------------- installation detection
     protected override string ThirdPartySdkFolderName => "KrPcSdk_Mainland";

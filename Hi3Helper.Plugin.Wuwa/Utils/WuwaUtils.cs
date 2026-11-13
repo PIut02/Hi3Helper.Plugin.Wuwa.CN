@@ -57,13 +57,15 @@ internal static class WuwaUtils
 #endif
         }
 
+        // The base URL is only used to derive the Host header; every request uses an absolute
+        // URL built by the API classes. Keep just the CDN host here - the old multi-segment
+        // paths above are retired and Core's CombineUrlFromString under-allocates for that
+        // many segments anyway.
         switch (accessOption)
         {
             case "news":
-                builder.SetBaseUrl(apiBaseUrl.CombineUrlFromString("launcher", authCdnToken, gameTag, "information", "en.json"));
-                break;
             case "media":
-                builder.SetBaseUrl(apiBaseUrl.CombineUrlFromString("launcher", gameTag, authCdnToken, "social", "en.json"));
+                builder.SetBaseUrl(apiBaseUrl!);
                 break;
             default:
                 break;

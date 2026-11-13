@@ -22,11 +22,11 @@ namespace Hi3Helper.Plugin.Wuwa.Management.Api;
 
 [GeneratedComClass]
 /// <param name="apiResponseBaseUrl">Region CDN base.</param>
-/// <param name="mediaConfigUrl">Endpoint returning the rotating background hash.</param>
-/// <param name="wallpaperBaseUrl">Base directory to which background/{hash}/{locale}.json is appended.</param>
+/// <param name="gameConfigUrl">Official game-config endpoint; the background hash comes from
+/// <c>config.functionCode.background</c> and the wallpaper lives in the same directory.</param>
 /// <param name="localeFileName">Localized payload name (en.json / zh-Hans.json).</param>
-internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, string mediaConfigUrl,
-    string wallpaperBaseUrl, string localeFileName = "en.json") : LauncherApiMediaBase
+internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, string gameConfigUrl,
+    string localeFileName = "en.json") : LauncherApiMediaBase
 {
     [field: AllowNull, MaybeNull]
     protected override HttpClient ApiResponseHttpClient
@@ -217,18 +217,17 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         long startTick = Environment.TickCount64;
         SharedStatic.InstanceLogger.LogWarning("[WuwaGlobalLauncherApiMedia::InitAsync] ENTER");
 
-        // Step 1 — resolve the current (rotating) background hash.
-        // Global regions use the official game-config endpoint (config.functionCode.background);
-        // the mainland region still uses the legacy launcher-config endpoint (root functionCode).
-        // Both are supplied by the preset config, so this class stays region agnostic.
+        // Step 1 — resolve the current (rotating) background hash from the official game-config
+        // endpoint (config.functionCode.background). Both regions share this layout; only the
+        // endpoint URL and locale differ, and both are injected by the preset config.
 
 #if DEBUG
         SharedStatic.InstanceLogger.LogDebug(
-            "[WuwaGlobalLauncherApiMedia::InitAsync] Fetching config: {Url}", mediaConfigUrl);
+            "[WuwaGlobalLauncherApiMedia::InitAsync] Fetching config: {Url}", gameConfigUrl);
 #endif
 
         using HttpResponseMessage configResponse = await ApiResponseHttpClient!
-            .GetAsync(mediaConfigUrl, token).ConfigureAwait(false);
+            .GetAsync(gameConfigUrl, token).ConfigureAwait(false);
         if (!configResponse.IsSuccessStatusCode)
         {
             SharedStatic.InstanceLogger.LogError(
@@ -244,13 +243,10 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
         WuwaApiResponseLauncherConfig? launcherConfig = JsonSerializer.Deserialize(
             configJson, WuwaApiResponseContext.Default.WuwaApiResponseLauncherConfig);
 
-        // Global game-config nests it under "config"; the mainland launcher-config keeps it at
-        // the root. Accept both so one media implementation serves both CDN generations.
-        string? backgroundHash = launcherConfig?.Config?.FunctionCode?.Background
-                                 ?? launcherConfig?.FunctionCode?.Background;
+        string? backgroundHash = launcherConfig?.Config?.FunctionCode?.Background;
         if (string.IsNullOrEmpty(backgroundHash))
             throw new InvalidOperationException(
-                "config response did not contain a valid functionCode.background hash.");
+                "game-config response did not contain a valid config.functionCode.background hash.");
 
 #if DEBUG
         SharedStatic.InstanceLogger.LogDebug(
@@ -258,8 +254,8 @@ internal partial class WuwaGlobalLauncherApiMedia(string apiResponseBaseUrl, str
 #endif
 
         // Step 2 — fetch the wallpapers-slogan endpoint using the dynamic hash.
-        // URL: {wallpaperBaseUrl}/background/{hash}/{locale}.json
-        string wallpaperUrl = wallpaperBaseUrl
+        // URL: {gameConfigUrl 所在目录}/background/{hash}/{locale}.json
+        string wallpaperUrl = new Uri(new Uri(gameConfigUrl), ".").AbsoluteUri
             .CombineUrlFromString("background", backgroundHash, localeFileName);
 
 #if DEBUG
